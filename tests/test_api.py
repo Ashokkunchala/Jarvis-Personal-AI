@@ -38,7 +38,7 @@ def test_chat_rejects_oversized_history():
 
 
 def test_chat_fails_closed_without_configured_token(monkeypatch):
-    monkeypatch.delenv("JARVIS_API_TOKEN", raising=False)
+    monkeypatch.setenv("JARVIS_API_TOKEN", "")
     with TestClient(app) as client:
         response = client.post("/api/chat", json={"message": "hello"})
     assert response.status_code == 503
