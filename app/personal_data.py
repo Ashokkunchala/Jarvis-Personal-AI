@@ -12,13 +12,13 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
-from app.research import search_web
+from app.research import search_web\nfrom app.config import Settings
 
 router = APIRouter(prefix="/api", tags=["personal data"])
 
 
 def _db_path() -> Path:
-    return Path(os.getenv("JARVIS_DB_PATH", "data/jarvis.sqlite3"))
+    return Path(Settings().jarvis_db_path)
 
 
 def _connect():
@@ -47,7 +47,7 @@ def _connect():
 
 
 def require_device_token(authorization: str | None = Header(default=None)):
-    expected = os.getenv("JARVIS_API_TOKEN", "")
+    expected = Settings().jarvis_api_token
     if len(expected) < 32:
         raise HTTPException(status_code=503, detail="Set a random JARVIS_API_TOKEN of at least 32 characters before using personal-data APIs.")
     supplied = authorization.removeprefix("Bearer ").strip() if authorization else ""
