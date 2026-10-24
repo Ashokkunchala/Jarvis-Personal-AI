@@ -1,6 +1,6 @@
 """Small server-side web search adapter returning attributable source links."""
 from html.parser import HTMLParser
-from urllib.parse import parse_qs, urlencode, urlparse, unquote
+from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -15,16 +15,28 @@ class _ResultsParser(HTMLParser):
         attrs = dict(attrs)
         classes = set((attrs.get("class") or "").split())
         if tag == "a" and "result__a" in classes:
-            self._current = {"title": "", "url": attrs.get("href", ""), "snippet": ""}
+            href = attrs.get("href", "")
+            normalized = "https:" + href if href.startswith("//") else href
+            parsed_href = urlparse(normalized)
+            if parsed_href.hostname and (
+                parsed_href.hostname == "duckduckgo.com"
+                or parsed_href.hostname.endswith(".duckduckgo.com")
+            ):
+                target = parse_qs(parsed_href.query).get("uddg", [""])[0]
+                if target:
+                    href = unquote(target)
+            else:
+                href = normalized
+            self._current = {"title": "", "url": href, "snippet": ""}
             self._capture = "title"
-        elif tag in ("a", "div") and ("result__snippet" in classes):
+        elif tag in ("a", "div") and "result__snippet" in classes:
             self._capture = "snippet"
 
     def handle_data(self, data):
         if self._capture == "title" and self._current is not None:
             self._current["title"] += data
-        elif self._capture == "snippet" and self._current is not None:
-            self._current["snippet"] += data
+        elif self._capture == "snippet" and self.items:
+            self.items[-1]["snippet"] += data
 
     def handle_endtag(self, tag):
         if tag == "a" and self._capture == "title" and self._current is not None:
