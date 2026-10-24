@@ -48,6 +48,8 @@ GEMINI_MODEL=gemini-2.5-flash
 HOST=127.0.0.1
 PORT=8000
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+JARVIS_API_TOKEN=replace_with_a_random_secret_at_least_32_characters
+JARVIS_DB_PATH=data/jarvis.sqlite3
 ```
 
 Generate a random token in PowerShell with `python -c "import secrets; print(secrets.token_urlsafe(48))"` and replace the placeholder `JARVIS_API_TOKEN` value with it. Never leave the example placeholder in place. The token protects memory, reminders, workout, research, and coaching APIs. The browser chat route is still unauthenticated, so keep the backend bound to localhost and do not expose it publicly. Do not include extra quotes unless required by the value. The suggested model is configurable; if Google changes model availability or your account cannot use it, select a currently supported model from Google's documentation. Keep the Gemini key and token only in this local file.
