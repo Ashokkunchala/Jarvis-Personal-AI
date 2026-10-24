@@ -1,6 +1,4 @@
 .env
-.env.*
-!.env.example
 .venv/
 venv/
 __pycache__/
@@ -8,9 +6,9 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
-dist/
-build/
-*.egg-info/
+data/
+*.sqlite
+*.sqlite3
+*.db
 .DS_Store
-.idea/
-.vscode/
+Thumbs.db
