@@ -85,7 +85,7 @@ Run automated tests:
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The tests do not need a paid Gemini request. A real chat does.
+The tests do not need a paid Gemini request. A real chat does.\n\nWith the backend running, verify your real Gemini key with the one-request smoke test (provider quota may apply):\n\n```powershell\n.\\scripts\\smoke-test.ps1\n```
 
 ## Voice notes
 - Browser voice recognition depends on browser support, microphone permission, and OS settings. Current Chrome/Edge usually provide the best support.
