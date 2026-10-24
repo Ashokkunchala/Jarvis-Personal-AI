@@ -11,7 +11,7 @@ def setup_client(monkeypatch, tmp_path):
 
 
 def test_personal_apis_require_device_token(monkeypatch, tmp_path):
-    monkeypatch.delenv("JARVIS_API_TOKEN", raising=False)
+    monkeypatch.setenv("JARVIS_API_TOKEN", "")
     monkeypatch.setenv("JARVIS_DB_PATH", str(tmp_path / "jarvis.sqlite3"))
     with TestClient(app) as client:
         response = client.get("/api/memories")
