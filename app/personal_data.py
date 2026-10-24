@@ -47,7 +47,7 @@ def _connect():
 
 def require_device_token(authorization: str | None = Header(default=None)):
     expected = Settings().jarvis_api_token
-    if len(expected) < 32:
+    if len(expected) < 32 or expected.startswith("replace_"):
         raise HTTPException(status_code=503, detail="Set a random JARVIS_API_TOKEN of at least 32 characters before using personal-data APIs.")
     supplied = authorization.removeprefix("Bearer ").strip() if authorization else ""
     if not hmac.compare_digest(supplied, expected):
