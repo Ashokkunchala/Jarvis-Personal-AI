@@ -118,7 +118,7 @@ def create_reminder(item: ReminderCreate):
         raise HTTPException(status_code=422, detail="due_at must include a timezone, e.g. +05:30.")
     with _connect() as db:
         cur = db.execute("INSERT INTO reminders(title,due_at,created_at) VALUES(?,?,?)",
-                         (item.title.strip(), item.due_at.isoformat(), _now()))
+                         (item.title.strip(), item.due_at.astimezone(timezone.utc).isoformat(), _now()))
         row = db.execute("SELECT * FROM reminders WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
 
@@ -164,7 +164,7 @@ def create_workout(item: WorkoutCreate):
     with _connect() as db:
         cur = db.execute(
             "INSERT INTO workouts(activity,duration_minutes,notes,performed_at,created_at) VALUES(?,?,?,?,?)",
-            (item.activity.strip(), item.duration_minutes, item.notes.strip(), performed.isoformat(), _now()))
+            (item.activity.strip(), item.duration_minutes, item.notes.strip(), performed.astimezone(timezone.utc).isoformat(), _now()))
         row = db.execute("SELECT * FROM workouts WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
 
