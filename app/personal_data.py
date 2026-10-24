@@ -4,15 +4,14 @@ This module deliberately refuses access until JARVIS_API_TOKEN is configured.
 Keep the server bound to localhost until TLS and device pairing are deployed.
 """
 import hmac
-import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
-from app.research import search_web\nfrom app.config import Settings
+from app.research import search_web
+from app.config import Settings
 
 router = APIRouter(prefix="/api", tags=["personal data"])
 
