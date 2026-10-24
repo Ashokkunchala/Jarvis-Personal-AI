@@ -80,7 +80,7 @@ The automated tests use mocks and do not prove your real Gemini key works. After
 
 - `GET /health` — health check.
 - `GET /` — browser chat UI.
-- `POST /api/chat` — Gemini chat; currently **not authenticated**, so only run the backend locally.
+- `POST /api/chat` — Gemini chat; requires the configured bearer token. Keep the service local until production security is completed.
 - Token-protected APIs: `/api/memories`, `/api/reminders`, `/api/workouts`, `/api/research`, `/api/coach/workout`, and `/api/coach/nutrition`.
 - `GET /docs` — local API reference.
 
