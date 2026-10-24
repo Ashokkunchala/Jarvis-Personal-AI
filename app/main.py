@@ -84,7 +84,7 @@ def chat(request: ChatRequest) -> ChatResponse:
             contents=contents,
             config={
                 "system_instruction": (
-                    SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(request.language)
+                    SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(request.language) + " " + name_instruction
                 ),
                 "temperature": 0.8,
             },
