@@ -109,3 +109,12 @@ def test_chat_requires_configured_device_token(monkeypatch):
         )
         # Token was accepted; the response proceeds to the configured-provider check.
         assert authorized.status_code == 503
+
+
+
+def test_chat_fails_closed_without_configured_token(monkeypatch):
+    monkeypatch.delenv("JARVIS_API_TOKEN", raising=False)
+    with TestClient(app) as client:
+        response = client.post("/api/chat", json={"message": "hello"})
+    assert response.status_code == 503
+    assert "JARVIS_API_TOKEN" in response.json()["detail"]
