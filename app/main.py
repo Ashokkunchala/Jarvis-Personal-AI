@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from google import genai
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.personality import SYSTEM_INSTRUCTIONS, language_instruction
 from app.schemas import ChatRequest, ChatResponse
 from app.personal_data import router as personal_data_router, require_device_token
