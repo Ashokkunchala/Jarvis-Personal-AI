@@ -93,3 +93,19 @@ def test_authenticated_workout_coach_uses_gemini(monkeypatch):
         )
     assert response.status_code == 200
     assert "Warm up" in response.json()["plan"]
+
+
+
+def test_chat_requires_configured_device_token(monkeypatch):
+    monkeypatch.setenv("JARVIS_API_TOKEN", "test-token-that-is-at-least-32-characters")
+    with TestClient(app) as client:
+        unauthorized = client.post("/api/chat", json={"message": "hello"})
+        assert unauthorized.status_code == 401
+        app.state.gemini_client = None
+        authorized = client.post(
+            "/api/chat",
+            headers={"Authorization": "Bearer test-token-that-is-at-least-32-characters"},
+            json={"message": "hello"},
+        )
+        # Token was accepted; the response proceeds to the configured-provider check.
+        assert authorized.status_code == 503
