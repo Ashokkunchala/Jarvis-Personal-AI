@@ -50,7 +50,7 @@ PORT=8000
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
-Do not include extra quotes unless required by the value. The suggested model is configurable; if Google changes model availability or your account cannot use it, select a currently supported model from Google's documentation. Keep the key only in this local file.
+Generate a random token in PowerShell with `python -c "import secrets; print(secrets.token_urlsafe(48))"` and replace the placeholder `JARVIS_API_TOKEN` value with it. Never leave the example placeholder in place. The token protects memory, reminders, workout, research, and coaching APIs. The browser chat route is still unauthenticated, so keep the backend bound to localhost and do not expose it publicly. Do not include extra quotes unless required by the value. The suggested model is configurable; if Google changes model availability or your account cannot use it, select a currently supported model from Google's documentation. Keep the Gemini key and token only in this local file.
 
 ## 5. Start JARVIS
 
@@ -99,4 +99,4 @@ The tests do not need a paid Gemini request. A real chat does.
 - **Telugu voice unavailable:** the model can return Telugu text, but local spoken output depends on installed browser/OS voices.
 
 ## Safety
-The starter is deliberately bound to localhost. Do not bind it to `0.0.0.0`, port-forward it, or expose it via a public tunnel. There is no user authentication in this early build.
+The starter is deliberately bound to localhost. Do not bind it to `0.0.0.0`, port-forward it, or expose it via a public tunnel. Personal-data APIs require a bearer token, but the chat endpoint is still unauthenticated. Keep all routes local; do not expose this prototype to the internet.
