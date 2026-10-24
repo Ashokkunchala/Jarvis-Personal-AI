@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, Field\nfrom app.research import search_web
+from pydantic import BaseModel, Field
+from app.research import search_web
 
 router = APIRouter(prefix="/api", tags=["personal data"])
 
