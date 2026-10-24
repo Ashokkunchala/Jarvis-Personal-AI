@@ -29,7 +29,7 @@ A Gemini-powered personal assistant prototype for Indian English and Telugu. The
 - Token-protected user-triggered web search with source links.
 - Experimental Windows agent: system status and user-confirmed HTTPS URL opening for allow-listed domains.
 - Optional Windows toast reminder worker that polls the local backend while its process is running.
-- Native Kotlin/Jetpack Compose Android starter screen; it checks an HTTPS health endpoint and stores the device token encrypted with an Android Keystore key, but it is not yet connected to authenticated chat or personal-data APIs.
+- Native Kotlin/Jetpack Compose Android starter screen; it checks an HTTPS health endpoint, stores the token encrypted with Android Keystore, and includes an initial authenticated chat client. Personal-data API screens and device pairing/revocation are not yet implemented.
 - Python API tests and GitHub Actions test/build workflows.
 
 ## Major gaps
