@@ -10,6 +10,7 @@ from google import genai
 from app.config import get_settings
 from app.personality import SYSTEM_INSTRUCTIONS, language_instruction
 from app.schemas import ChatRequest, ChatResponse
+from app.personal_data import router as personal_data_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("jarvis")
@@ -35,6 +36,8 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan,
 )
+
+app.include_router(personal_data_router)
 
 app.add_middleware(
     CORSMiddleware,
