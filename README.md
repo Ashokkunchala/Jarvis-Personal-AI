@@ -2,13 +2,13 @@
 
 A private, extensible personal AI companion powered by the Gemini API, designed for Indian English with Telugu support. Its personality adapts: friendly and witty for everyday conversation, calm and thoughtful when needed, and energetic and motivational for coaching.
 
-> **Current release: early local MVP.** The Gemini chat backend and browser interface are implemented in code. A successful live Gemini call, browser voice behavior, and the full automated test run still need to be verified on your computer. Android control, Windows system automation, cloud memory, web search, and real scheduled reminders are not implemented yet.
+> **Current release: early multi-component prototype.** The Gemini chat backend and browser interface are implemented. Authenticated SQLite APIs now support explicit memories, reminder records, workout logs, and user-triggered live web search. A narrow Windows helper can report status and open confirmed HTTPS URLs from an allow-list. A native Kotlin/Compose Android starter is present, but it is not yet connected to the backend. CI must be checked for the latest commit; a real Gemini API call and Android SDK build have not been verified here.
 
 ## Start here
 
 - **Windows installation:** [docs/SETUP-WINDOWS.md](docs/SETUP-WINDOWS.md)
 - Feature status: [docs/FEATURES.md](docs/FEATURES.md)
-- Architecture and roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
+- Architecture and roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)\n- Milestone plan: [docs/NEXT-MILESTONES.md](docs/NEXT-MILESTONES.md)\n- Personal memory, reminders and workouts API: [docs/PERSONAL-DATA-API.md](docs/PERSONAL-DATA-API.md)\n- Live web research: [docs/WEB-RESEARCH.md](docs/WEB-RESEARCH.md)\n- Native Android starter: [android/README.md](android/README.md)\n- Windows companion agent: [windows_agent/README.md](windows_agent/README.md)
 - Security: [docs/SECURITY.md](docs/SECURITY.md)
 - Deployment strategy: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - Continuous improvement: [docs/CONTINUOUS-IMPROVEMENT.md](docs/CONTINUOUS-IMPROVEMENT.md)
@@ -23,7 +23,7 @@ A private, extensible personal AI companion powered by the Gemini API, designed 
 - Browser speech input when supported and user-authorized.
 - Browser text-to-speech using installed voices (not Gemini-generated audio).
 - Optional browser-local chat history and a local checklist, both stored only on the current browser/device.
-- Health endpoint, initial API tests, and a GitHub Actions test workflow.
+- Health endpoint, API tests, and GitHub Actions test workflow.\n- Authenticated SQLite APIs for explicit memory creation/list/deletion, reminder storage/due polling/completion, and workout logs.\n- Authenticated user-triggered web search returning attributable source URLs.\n- Experimental localhost-only Windows agent for status and confirmed allow-listed HTTPS URL opening.\n- Native Android Kotlin/Jetpack Compose starter screen with HTTPS-only setup validation.
 
 ## Not implemented yet
 
