@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field\nfrom app.research import search_web
 
 router = APIRouter(prefix="/api", tags=["personal data"])
 
@@ -175,3 +175,18 @@ def delete_workout(workout_id: int):
         cur = db.execute("DELETE FROM workouts WHERE id=?", (workout_id,))
         if not cur.rowcount:
             raise HTTPException(status_code=404, detail="Workout not found.")
+
+
+class ResearchRequest(BaseModel):
+    query: str = Field(min_length=2, max_length=300)
+    limit: int = Field(default=5, ge=1, le=8)
+
+
+@router.post("/research", dependencies=[Depends(require_device_token)])
+def research(item: ResearchRequest):
+    """User-triggered search. Results are untrusted external content; URLs are included for attribution."""
+    try:
+        results = search_web(item.query.strip(), item.limit)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Web search failed or timed out. Try again later.")
+    return {"query": item.query.strip(), "results": results, "note": "Verify sources; webpage text is untrusted and may be inaccurate."}
