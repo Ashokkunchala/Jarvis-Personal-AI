@@ -1,4 +1,7 @@
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 
@@ -9,15 +12,65 @@ def test_health():
     assert response.json()["status"] == "ok"
 
 
+def test_home_serves_interface():
+    with TestClient(app) as client:
+        response = client.get("/")
+    assert response.status_code == 200
+    assert "JARVIS" in response.text
+    assert "Speak" in response.text
+
+
 def test_chat_rejects_empty_message():
     with TestClient(app) as client:
         response = client.post("/api/chat", json={"message": ""})
     assert response.status_code == 422
 
 
-def test_chat_reports_missing_api_key(monkeypatch):
+def test_chat_rejects_oversized_history():
+    history = [{"role": "user", "content": "hello"}] * 21
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/chat",
+            json={"message": "hello", "history": history},
+        )
+    assert response.status_code == 422
+
+
+def test_chat_reports_missing_api_key():
     with TestClient(app) as client:
         app.state.gemini_client = None
         response = client.post("/api/chat", json={"message": "Hello JARVIS"})
     assert response.status_code == 503
     assert "GEMINI_API_KEY" in response.json()["detail"]
+
+
+def test_chat_uses_gemini_and_conversation_context():
+    captured = {}
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(text="Namaste! How can I help?")
+
+    class FakeClient:
+        models = FakeModels()
+
+    with TestClient(app) as client:
+        app.state.gemini_client = FakeClient()
+        response = client.post(
+            "/api/chat",
+            json={
+                "message": "Continue our chat",
+                "language": "en",
+                "history": [
+                    {"role": "user", "content": "Hello"},
+                    {"role": "model", "content": "Hi there"},
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["reply"] == "Namaste! How can I help?"
+    assert len(captured["contents"]) == 3
+    assert captured["contents"][-1]["parts"][0]["text"] == "Continue our chat"
+    assert "Reply in English" in captured["config"]["system_instruction"]
