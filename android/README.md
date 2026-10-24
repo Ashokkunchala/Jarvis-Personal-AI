@@ -11,7 +11,7 @@ cd android
 gradle assembleDebug
 ```
 
-The expected debug APK path after a successful build is `app/build/outputs/apk/debug/app-debug.apk`. This repository update has not been built on an Android SDK-equipped machine, so APK generation is not yet verified.
+The expected debug APK path after a successful build is `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions successfully built the debug APK for the current Android source revision. A physical-device install and live backend test are still pending.
 
 ## Security and next work
 
