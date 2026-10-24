@@ -1,6 +1,6 @@
 # Native Android application
 
-This is the first Kotlin + Jetpack Compose app shell. It has no always-on microphone, device-control, notification, or background-sync behavior yet. The setup screen checks the HTTPS backend health endpoint and stores the token encrypted with an Android Keystore AES-GCM key after the health check succeeds. It does not yet call authenticated chat or personal-data APIs.
+This is the first Kotlin + Jetpack Compose app shell. It has no always-on microphone, device-control, notification, or background-sync behavior yet. The setup screen checks the HTTPS backend health endpoint and stores the token encrypted with an Android Keystore AES-GCM key after the health check succeeds. It can call the chat endpoint over HTTPS using the encrypted token; personal-data API screens and device pairing/revocation are not implemented.
 
 ## Build
 
