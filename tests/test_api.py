@@ -74,3 +74,22 @@ def test_chat_uses_gemini_and_conversation_context():
     assert len(captured["contents"]) == 3
     assert captured["contents"][-1]["parts"][0]["text"] == "Continue our chat"
     assert "Reply in English" in captured["config"]["system_instruction"]
+
+
+
+def test_authenticated_workout_coach_uses_gemini(monkeypatch):
+    monkeypatch.setenv("JARVIS_API_TOKEN", "test-token-that-is-at-least-32-characters")
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            return SimpleNamespace(text="Warm up, walk, and cool down.")
+    class FakeClient:
+        models = FakeModels()
+    with TestClient(app) as client:
+        app.state.gemini_client = FakeClient()
+        response = client.post(
+            "/api/coach/workout",
+            headers={"Authorization": "Bearer test-token-that-is-at-least-32-characters"},
+            json={"goal": "Improve stamina", "fitness_level": "beginner", "days_per_week": 3},
+        )
+    assert response.status_code == 200
+    assert "Warm up" in response.json()["plan"]
