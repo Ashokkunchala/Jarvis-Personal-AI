@@ -38,3 +38,13 @@ This is a basic activity log, not medical advice or a substitute for a qualified
 ## Security notes
 
 The token is a shared bearer secret, not full device pairing. Anyone who obtains it can access these endpoints. Rotate it if exposed. Use HTTPS, per-device credentials, revocation, rate limits, audit logs, and encrypted backups before any cloud deployment. Do not forward a local server port to the internet.
+
+
+## AI coaching endpoints
+
+These endpoints require the same bearer token and a configured Gemini key:
+
+- `POST /api/coach/workout`: `{"goal":"Improve stamina","fitness_level":"beginner","days_per_week":3,"session_minutes":30,"limitations":""}`
+- `POST /api/coach/nutrition`: `{"goal":"Balanced meals","dietary_preferences":"vegetarian","allergies":"","budget_notes":"budget friendly Indian meals"}`
+
+The outputs are general suggestions only. They are not diagnosis, medical nutrition therapy, or a substitute for a qualified professional. State injuries, limitations, allergies, and dietary constraints explicitly; stop exercise if pain or unusual symptoms occur.
