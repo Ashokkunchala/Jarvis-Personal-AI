@@ -2,7 +2,7 @@
 
 A Gemini-powered personal assistant prototype for Indian English and Telugu. The intended personality is adaptive: friendly and witty for everyday chat, calm for serious topics, and energetic for coaching.
 
-> **Status: multi-component prototype, not a complete JARVIS yet.** This repository contains a local Gemini chat UI, authenticated SQLite APIs for explicit memories/reminders/workout logs, a first live web-search adapter, a restricted Windows helper, and a native Android starter screen. The Android app is not connected to the backend. Public cloud deployment is not safe yet.
+> **Status: multi-component prototype, not a complete JARVIS yet.** This repository contains a local Gemini chat UI, authenticated SQLite APIs for explicit memories/reminders/workout logs, a first live web-search adapter, a restricted Windows helper, and a native Android starter screen. The Android app now has an initial HTTPS chat client, but needs a successful Android build and end-to-end device test. Public cloud deployment is not safe yet.
 
 ## Start here
 
@@ -34,7 +34,7 @@ A Gemini-powered personal assistant prototype for Indian English and Telugu. The
 
 ## Major gaps
 
-- The Android app is not yet integrated with authenticated chat or personal-data APIs; token storage using Android Keystore and device pairing are not implemented.
+- The Android app can send authenticated chat requests over HTTPS and encrypts the token with Android Keystore. It is not yet integrated with the personal-data APIs or per-device pairing/revocation.
 - The Windows helper does not execute arbitrary commands or control files/apps/settings. This is intentionally restricted.
 - Reminder notification delivery is an experimental Windows polling worker, not a reliable alarm service. There is no Android push notification or recurrence yet.
 - Memories are explicitly entered via API; there is no consent-driven extraction or review UI.
