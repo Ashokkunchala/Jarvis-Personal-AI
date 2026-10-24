@@ -1,6 +1,6 @@
 """Small server-side web search adapter returning attributable source links."""
 from html.parser import HTMLParser
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, unquote
 from urllib.request import Request, urlopen
 
 
