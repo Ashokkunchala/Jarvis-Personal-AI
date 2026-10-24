@@ -2,7 +2,7 @@
 
 A Gemini-powered personal assistant prototype for Indian English and Telugu. The intended personality is adaptive: friendly and witty for everyday chat, calm for serious topics, and energetic for coaching.
 
-> **Status: multi-component prototype, not a complete JARVIS yet.** This repository contains a local Gemini chat UI, authenticated SQLite APIs for explicit memories/reminders/workout logs, a first live web-search adapter, a restricted Windows helper, and a native Android starter screen. The Android app now has an initial HTTPS chat client, but needs a successful Android build and end-to-end device test. Public cloud deployment is not safe yet.
+> **Status: multi-component prototype, not a complete JARVIS yet.** This repository contains a local Gemini chat UI, authenticated SQLite APIs for explicit memories/reminders/workout logs, a first live web-search adapter, a restricted Windows helper, and a native Android starter screen. The Android debug APK build passed in GitHub Actions for the current Android source revision; a physical-device end-to-end test is still pending. Public cloud deployment is not safe yet.
 
 ## Start here
 
