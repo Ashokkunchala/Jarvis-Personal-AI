@@ -1,79 +1,90 @@
 # JARVIS Personal AI
 
-A private, extensible personal AI companion powered by the Gemini API, designed for Indian English with Telugu support. The personality is adaptive: friendly and witty for everyday conversation, calm and thoughtful when needed, and energetic and motivational for coaching.
+A private, extensible personal AI companion powered by the Gemini API, designed for Indian English with Telugu support. Its personality adapts: friendly and witty for everyday conversation, calm and thoughtful when needed, and energetic and motivational for coaching.
 
-> **Status:** Phase 1 starter backend. This repository is not yet a full device-controlling assistant. Android, Windows automation, persistent memory, reminders, and voice sessions will be added in staged, tested phases.
+> **Current release: early local MVP.** The Gemini chat backend and browser interface are implemented in code. A successful live Gemini call, browser voice behavior, and the full automated test run still need to be verified on your computer. Android control, Windows system automation, cloud memory, web search, and real scheduled reminders are not implemented yet.
 
-## Goals
+## Start here
 
-- Friendly conversation, jokes, brainstorming, and original song-writing.
-- Indian English and Telugu-aware responses; follow the language the user uses and support natural code-switching.
-- Daily planning, tasks, reminders, habits, learning, workouts, and general nutrition guidance.
-- Web research and tool use through explicit, permissioned integrations.
-- Android and Windows control through separately installed local clients, with confirmation for sensitive actions.
-- Continuous improvement through documented issues, regression tests, security reviews, and opt-in user feedback.
+- **Windows installation:** [docs/SETUP-WINDOWS.md](docs/SETUP-WINDOWS.md)
+- Feature status: [docs/FEATURES.md](docs/FEATURES.md)
+- Architecture and roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
+- Security: [docs/SECURITY.md](docs/SECURITY.md)
+- Deployment strategy: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- Continuous improvement: [docs/CONTINUOUS-IMPROVEMENT.md](docs/CONTINUOUS-IMPROVEMENT.md)
+- Developer guide: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+
+## What works in this codebase
+
+- FastAPI backend with a Gemini API integration.
+- Responsive web chat interface served at `http://127.0.0.1:8000`.
+- Adaptive personality instructions and English/Telugu response preference.
+- Bounded conversation context for the active chat; the server does not persist conversations.
+- Browser speech input when supported and user-authorized.
+- Browser text-to-speech using installed voices (not Gemini-generated audio).
+- Optional browser-local chat history and a local checklist, both stored only on the current browser/device.
+- Health endpoint, initial API tests, and a GitHub Actions test workflow.
+
+## Not implemented yet
+
+- Native Android app or background always-on assistant.
+- Windows agent that controls applications, files, or system settings.
+- Live web search or autonomous browser agent.
+- Cloud-synced memory, real notifications, or recurring reminders.
+- Workout sensor integration or personalised medical/nutrition services.
+- Public cloud deployment. The current API has no authentication and must not be exposed to the internet.
+
+## Quick setup (Windows PowerShell)
+
+Requirements: Python 3.11+ and a Gemini API key from [Google AI Studio](https://aistudio.google.com/).
+
+```powershell
+git clone https://github.com/Ashokkunchala/Jarvis-Personal-AI.git
+cd Jarvis-Personal-AI
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\setup-windows.ps1
+notepad .env
+```
+
+Put your key in the local `.env` file, save it, then start the server:
+
+```powershell
+.\scripts\start-windows.ps1
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). Keep the terminal open while using the app; Ctrl+C stops the server.
+
+Run tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+For all prerequisites, key setup, troubleshooting, and voice limitations, follow the [full setup guide](docs/SETUP-WINDOWS.md).
+
+## API endpoints
+
+- `GET /health` — basic health status, no secrets exposed.
+- `GET /` — JARVIS browser interface.
+- `POST /api/chat` — body example: `{"message":"Hi JARVIS","language":"auto","history":[]}`.
+- `GET /docs` — local OpenAPI documentation.
 
 ## Architecture
 
 - **AI backend:** Python + FastAPI + Google GenAI SDK.
-- **Model:** configurable through `GEMINI_MODEL`; verify model availability for your API project.
-- **Secrets:** `.env` locally; never put API keys in source code, client apps, logs, or Git.
-- **Future clients:** Android (Kotlin/Jetpack Compose) and Windows local agent. The cloud model alone cannot control device hardware or applications.
-- **Memory:** will be opt-in, inspectable, and deletable. Do not send sensitive personal details unless you choose to.
+- **Model:** configurable through `GEMINI_MODEL`; confirm the selected model is currently available to your account.
+- **Secrets:** local `.env`; never put API keys in the UI, mobile app, logs, or Git.
+- **Future clients:** Android (Kotlin/Jetpack Compose) and a Windows local agent, added separately.
+- **Memory:** opt-in and user-manageable if implemented; not currently stored server-side.
 
-## Quick start (Windows PowerShell)
+## Security and cost
 
-1. Install Python 3.11 or newer.
-2. Copy `.env.example` to `.env` and set your Gemini API key.
-3. In this folder:
+- Keep the server bound to `127.0.0.1`. Do not use a public tunnel, port-forwarding, or `0.0.0.0` binding with this unauthenticated starter.
+- The Gemini API may incur charges depending on model, quota, and account terms. Check provider pricing and usage controls.
+- Never commit a real `.env`; `.gitignore` excludes it.
+- Sensitive device actions must require confirmation; arbitrary model-generated shell execution is prohibited by design.
+- Wellness guidance is general information, not diagnosis or medical treatment.
 
-```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+## Continuous improvement
 
-4. Open `http://127.0.0.1:8000/docs` and try `POST /api/chat`.
-
-Keep the service bound to localhost while developing. Do not expose it publicly without authentication, rate limits, HTTPS, and a deliberate deployment review.
-
-## Configuration
-
-See `.env.example`. Keep `GEMINI_API_KEY` on the backend only. Set usage limits in Google AI Studio / your Google Cloud project as available, and monitor usage and billing. API availability and pricing depend on the selected model and account.
-
-## API
-
-- `GET /health` — basic health status (does not expose secrets).
-- `POST /api/chat` — request JSON: `{"message":"Hi JARVIS","language":"auto"}`.
-- `language` accepts `auto`, `en`, or `te`.
-
-The initial API is stateless: it does not persist conversations. This is intentional until memory controls and retention rules are implemented.
-
-## Safety boundaries
-
-- This backend only generates responses; it does not execute shell commands or control devices.
-- Never add arbitrary shell execution as an LLM tool.
-- Require explicit approval for file deletion, sending messages, purchases, account changes, infrastructure changes, or other consequential actions.
-- Use least-privilege permissions and audit tool actions.
-- Wellness suggestions are general information, not diagnosis or medical treatment. Stop exercise if you experience concerning symptoms and seek qualified help.
-- Use original lyrics/songwriting rather than reproducing copyrighted song lyrics on request.
-
-## Development and tests
-
-```powershell
-python -m pip install -r requirements-dev.txt
-pytest -q
-```
-
-See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/SECURITY.md](docs/SECURITY.md), and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
-
-## Roadmap
-
-1. Gemini chat backend, adaptive personality, English/Telugu support, tests.
-2. Voice interface and opt-in personal memory.
-3. Tasks, reminders, routines, and daily summaries.
-4. Android client and secure local Windows agent.
-5. Browser research and approved tool integrations.
-6. Workout and learning coaching, then proactive routines.
-7. Deployment, observability, cost limits, and end-to-end security tests.
+Every feature should include acceptance criteria, tests, a security and cost review, updated documentation, and a changelog entry. See [docs/CONTINUOUS-IMPROVEMENT.md](docs/CONTINUOUS-IMPROVEMENT.md). Automatic code changes must be tested and reviewed before deployment.
