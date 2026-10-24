@@ -34,6 +34,7 @@ const $ = (id) => document.getElementById(id);
 const messagesEl = $("messages"), statusEl = $("status");
 let history = [];
 let tasks = [];
+let deviceToken = "";
 let busy = false;
 const HISTORY_KEY = "jarvis.history.v1", SETTINGS_KEY = "jarvis.settings.v1", TASKS_KEY = "jarvis.tasks.v1";
 function setStatus(text, error=false){ statusEl.textContent=text; statusEl.className=error?"status error":"status"; }
