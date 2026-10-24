@@ -55,7 +55,7 @@ async function sendMessage(text){
  const prior=history.slice(-20);
  addMessage("user",text); history.push({role:"user",content:text}); $("message").value=""; busy=true;$("send").disabled=true;$("mic").disabled=true;setStatus("Thinking…");
  try{
-   const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,language:language(),history:prior})});
+   const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,language:language(),nickname:$("nickname").value.trim(),history:prior})});
    const data=await res.json();
    if(!res.ok)throw new Error(data.detail||"Request failed ("+res.status+").");
    addMessage("model",data.reply);history.push({role:"model",content:data.reply});history=history.slice(-40);saveHistory();speak(data.reply);setStatus("Ready · "+data.model);
