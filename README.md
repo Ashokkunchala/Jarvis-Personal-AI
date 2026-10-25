@@ -24,7 +24,7 @@ A Gemini-powered personal assistant prototype for Indian English and Telugu. The
 - Adaptive personality instructions and English/Telugu response preference.
 - Browser speech input (only when manually activated and supported) and browser text-to-speech.
 - Optional browser-local conversation history and local checklist.
-- SQLite-backed, token-protected APIs to create/list/delete explicit memories, create/list/complete reminders, and log/delete workouts.
+- SQLite-backed, token-protected APIs to create/list/edit/delete explicit memories, export personal data, create/list/complete reminders, and log/delete workouts.
 - Token-protected AI workout and general nutrition suggestion endpoints.
 - Token-protected user-triggered web search with source links.
 - Experimental Windows agent: system status and user-confirmed HTTPS URL opening for allow-listed domains.
