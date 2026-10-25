@@ -54,7 +54,7 @@ private fun SetupScreen() {
     var reply by remember { mutableStateOf("Connect to your private HTTPS backend to start chatting.") }
     var status by remember { mutableStateOf("Enter the HTTPS backend URL and device token.") }
     var busy by remember { mutableStateOf(false) }
-    var voiceBusy by remember { mutableStateOf(false) }
+    var voiceBusy by remember { mutableStateOf(false) }\n    var language by remember { mutableStateOf("auto") }
 
     val speechLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -75,7 +75,7 @@ private fun SetupScreen() {
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) launchSpeech(speechLauncher) { voiceBusy = it }
+        if (granted) launchSpeech(speechLauncher, language) { voiceBusy = it }
         else status = "Microphone permission was denied. You can still type."
     }
     val tts = remember {
@@ -94,7 +94,7 @@ private fun SetupScreen() {
     LaunchedEffect(reply) {
         if (!reply.startsWith("Connect to your private")) {
             tts.language = Locale.getDefault().let { locale ->
-                if (locale.language == "te") locale else Locale.US
+                if (language == "te") Locale("te", "IN") else Locale("en", "IN")
             }
             tts.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "jarvis-reply")
         }
@@ -142,7 +142,7 @@ private fun SetupScreen() {
             }
         ) { Text(if (busy) "Connecting…" else "Connect securely") }
 
-        Text("Chat", style = MaterialTheme.typography.titleLarge)
+        Button(onClick = { language = when (language) { "auto" -> "en"; "en" -> "te"; else -> "auto" } }) { Text("Reply language: $language (tap to change)") }\n        Text("Chat", style = MaterialTheme.typography.titleLarge)
         Text(reply)
         OutlinedTextField(
             value = message,
@@ -156,7 +156,7 @@ private fun SetupScreen() {
                 if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
                     android.content.pm.PackageManager.PERMISSION_GRANTED
                 ) {
-                    launchSpeech(speechLauncher) { voiceBusy = it }
+                    launchSpeech(speechLauncher, language) { voiceBusy = it }
                 } else {
                     permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 }
@@ -172,7 +172,7 @@ private fun SetupScreen() {
                         require(base.startsWith("https://")) { "Connect to an HTTPS backend first." }
                         val activeToken = TokenVault.read(context) ?: token
                         require(activeToken.length >= 32) { "Connect with a device token first." }
-                        val payload = JSONObject().put("message", message.trim()).put("language", "auto").toString()
+                        val payload = JSONObject().put("message", message.trim()).put("language", language).toString()
                         val result = withContext(Dispatchers.IO) {
                             request(base + "/api/chat", payload, activeToken)
                         }
@@ -206,7 +206,7 @@ private fun launchSpeech(
     try {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (language == "te") "te-IN" else "en-IN")
             putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to JARVIS")
         }
         setBusy(true)
