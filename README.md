@@ -2,7 +2,7 @@
 
 A Gemini-powered personal assistant prototype for Indian English and Telugu. The intended personality is adaptive: friendly and witty for everyday chat, calm for serious topics, and energetic for coaching.
 
-> **Status: multi-component prototype, not a complete JARVIS yet.** This repository contains a local Gemini chat UI, authenticated SQLite APIs for explicit memories/reminders/workout logs, a first live web-search adapter, a restricted Windows helper, and a native Android starter screen. The Android debug APK build passed in GitHub Actions for the current Android source revision; a physical-device end-to-end test is still pending. Public cloud deployment is not safe yet.
+> **Status: multi-component prototype, not a complete JARVIS yet.** This repository contains a local Gemini chat UI, authenticated SQLite APIs for explicit memories/reminders/workout logs, a first live web-search adapter, a restricted Windows helper, and a native Android starter screen. An earlier Android revision built successfully in GitHub Actions; the latest voice/language changes are awaiting their CI build and a physical-device end-to-end test. Public cloud deployment is not safe yet.
 
 ## Start here
 
@@ -27,14 +27,14 @@ A Gemini-powered personal assistant prototype for Indian English and Telugu. The
 - SQLite-backed, token-protected APIs to create/list/edit/delete explicit memories, export personal data, create/list/complete reminders, and log/delete workouts.
 - Token-protected AI workout and general nutrition suggestion endpoints.
 - Token-protected user-triggered web search with source links.
-- Experimental Windows agent: system status and user-confirmed HTTPS URL opening for allow-listed domains.
+- Experimental Windows agent integrated with the local dashboard: authenticated status and user-confirmed HTTPS URL opening for allow-listed domains.
 - Optional Windows toast reminder worker that polls the local backend while its process is running.
 - Native Kotlin/Jetpack Compose Android client with HTTPS health check, Android Keystore token storage, authenticated chat, tap-to-speak voice input, spoken replies, and English/Telugu/adaptive language selection. Personal-data screens and device pairing/revocation remain pending.
 - Python API tests and GitHub Actions test/build workflows.
 
 ## Major gaps
 
-- The Android app can send authenticated chat requests over HTTPS and encrypts the token with Android Keystore. It is not yet integrated with the personal-data APIs or per-device pairing/revocation.
+- The Android app can send authenticated chat requests over HTTPS, supports tap-to-speak/spoken replies, and encrypts the token with Android Keystore. It is not yet integrated with the personal-data APIs or per-device pairing/revocation.
 - The Windows helper does not execute arbitrary commands or control files/apps/settings. This is intentionally restricted.
 - Reminder notification delivery is an experimental Windows polling worker, not a reliable alarm service. There is no Android push notification or recurrence yet.
 - Memories are explicitly entered via API; there is no consent-driven extraction or review UI.
