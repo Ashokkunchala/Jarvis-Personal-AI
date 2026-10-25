@@ -35,6 +35,7 @@ The notifier is experimental: delivery is deduplicated only in process memory, s
 - `GET /api/workouts`
 - `POST /api/workouts` with `{"activity":"Walking","duration_minutes":30,"notes":"Easy pace"}`
 - `DELETE /api/workouts/{id}`
+- `GET /api/workouts/summary` returns last-seven-day and all-time session/minute totals plus recent activity breakdown.
 
 This is a basic activity log, not medical advice or a substitute for a qualified coach. Do not submit sensitive health data to an untrusted deployment.
 
