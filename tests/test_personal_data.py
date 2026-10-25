@@ -84,3 +84,20 @@ def test_delete_all_memories(monkeypatch, tmp_path):
             ).status_code == 201
         assert client.delete("/api/memories", headers=headers).status_code == 204
         assert client.get("/api/memories", headers=headers).json()["items"] == []
+
+
+
+def test_workout_summary_reports_recent_and_all_time_totals(monkeypatch, tmp_path):
+    with setup_client(monkeypatch, tmp_path) as client:
+        headers = {"Authorization": "Bearer test-token-that-is-at-least-32-characters"}
+        for activity, duration in (("Walking", 20), ("Cycling", 40)):
+            response = client.post(
+                "/api/workouts", headers=headers,
+                json={"activity": activity, "duration_minutes": duration},
+            )
+            assert response.status_code == 201
+        summary = client.get("/api/workouts/summary", headers=headers)
+        assert summary.status_code == 200
+        assert summary.json()["last_7_days"]["sessions"] == 2
+        assert summary.json()["last_7_days"]["minutes"] == 60
+        assert summary.json()["all_time"]["minutes"] == 60
