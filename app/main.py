@@ -10,7 +10,7 @@ from google import genai
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
-from app.personal_data import require_device_token, router as personal_data_router
+from app.personal_data import get_memory_context, require_device_token, router as personal_data_router
 from app.personality import SYSTEM_INSTRUCTIONS, language_instruction
 from app.schemas import ChatRequest, ChatResponse
 
@@ -85,11 +85,19 @@ def chat(request: ChatRequest, authorization: str | None = Header(default=None))
         else ""
     )
     try:
+        try:
+            memory_instruction = get_memory_context()
+        except Exception:
+            logger.exception("Could not load saved memories; continuing without memory context")
+            memory_instruction = ""
+        system_instruction = SYSTEM_INSTRUCTIONS + "\\n\\n" + language_instruction(request.language) + " " + name_instruction
+        if memory_instruction:
+            system_instruction += "\\n\\n" + memory_instruction
         response = client.models.generate_content(
             model=settings.gemini_model,
             contents=contents,
             config={
-                "system_instruction": SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(request.language) + " " + name_instruction,
+                "system_instruction": system_instruction,
                 "temperature": 0.8,
             },
         )
