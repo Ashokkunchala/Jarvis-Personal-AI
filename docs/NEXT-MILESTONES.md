@@ -5,7 +5,7 @@
 - [x] SQLite endpoints for explicit memory entries, reminders, and workout logs.
 - [x] Bearer-token gate on personal-data endpoints; refuses to run these APIs without a configured token.
 - [ ] Run full test suite locally and verify GitHub Actions.
-- [ ] Add UI for reviewing/deleting memory and tracking reminders/workouts.
+- [x] Add UI for reviewing/editing/deleting memories, exporting personal data, and tracking reminders/workouts.
 - [ ] Add a notification worker with retries, deduplication, and visible delivery status.
 
 ## Milestone 2 — Windows companion agent
