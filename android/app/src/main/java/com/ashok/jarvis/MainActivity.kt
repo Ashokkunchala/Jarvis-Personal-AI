@@ -54,7 +54,8 @@ private fun SetupScreen() {
     var reply by remember { mutableStateOf("Connect to your private HTTPS backend to start chatting.") }
     var status by remember { mutableStateOf("Enter the HTTPS backend URL and device token.") }
     var busy by remember { mutableStateOf(false) }
-    var voiceBusy by remember { mutableStateOf(false) }\n    var language by remember { mutableStateOf("auto") }
+    var voiceBusy by remember { mutableStateOf(false) }
+    var language by remember { mutableStateOf("auto") }
 
     val speechLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -142,7 +143,8 @@ private fun SetupScreen() {
             }
         ) { Text(if (busy) "Connecting…" else "Connect securely") }
 
-        Button(onClick = { language = when (language) { "auto" -> "en"; "en" -> "te"; else -> "auto" } }) { Text("Reply language: $language (tap to change)") }\n        Text("Chat", style = MaterialTheme.typography.titleLarge)
+        Button(onClick = { language = when (language) { "auto" -> "en"; "en" -> "te"; else -> "auto" } }) { Text("Reply language: $language (tap to change)") }
+        Text("Chat", style = MaterialTheme.typography.titleLarge)
         Text(reply)
         OutlinedTextField(
             value = message,
