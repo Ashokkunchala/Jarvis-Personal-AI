@@ -40,6 +40,14 @@ This is a basic activity log, not medical advice or a substitute for a qualified
 The token is a shared bearer secret, not full device pairing. Anyone who obtains it can access these endpoints. Rotate it if exposed. Use HTTPS, per-device credentials, revocation, rate limits, audit logs, and encrypted backups before any cloud deployment. Do not forward a local server port to the internet.
 
 
+## Memory editing and data export
+
+- `PUT /api/memories/{id}` updates the text and category of an explicit memory.
+- `DELETE /api/memories` permanently deletes all saved memories after confirmation in the browser UI.
+- `GET /api/export` returns a JSON export of memories, reminders, and workout logs. The browser dashboard's **Export my data** button downloads this file.
+
+These endpoints require the bearer token. Store exported JSON securely because it may contain personal information.
+
 ## AI coaching endpoints
 
 These endpoints require the same bearer token and a configured Gemini key:
