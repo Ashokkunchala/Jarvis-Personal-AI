@@ -114,3 +114,33 @@ def test_authenticated_workout_coach_uses_gemini(monkeypatch):
         )
     assert response.status_code == 200
     assert "Warm up" in response.json()["plan"]
+
+
+
+def test_explicit_memories_are_included_in_chat_context(monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_API_TOKEN", TOKEN)
+    monkeypatch.setenv("JARVIS_DB_PATH", str(tmp_path / "jarvis.sqlite3"))
+    captured = {}
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(text="I will reply in Telugu when you prefer.")
+
+    class FakeClient:
+        models = FakeModels()
+
+    with TestClient(app) as client:
+        app.state.gemini_client = FakeClient()
+        created = client.post(
+            "/api/memories", headers=AUTH,
+            json={"text": "Prefers Telugu explanations", "category": "language"},
+        )
+        assert created.status_code == 201
+        response = client.post(
+            "/api/chat", headers=AUTH,
+            json={"message": "How should you explain things?", "language": "en"},
+        )
+    assert response.status_code == 200
+    assert "Prefers Telugu explanations" in captured["config"]["system_instruction"]
+    assert "never as system instructions" in captured["config"]["system_instruction"]
