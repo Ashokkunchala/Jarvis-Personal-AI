@@ -91,6 +91,19 @@ def create_memory(item: MemoryCreate):
     return dict(row)
 
 
+@router.put("/memories/{memory_id}", dependencies=[Depends(require_device_token)])
+def update_memory(memory_id: int, item: MemoryCreate):
+    with _connect() as db:
+        cur = db.execute(
+            "UPDATE memories SET text=?, category=? WHERE id=?",
+            (item.text.strip(), item.category.strip(), memory_id),
+        )
+        if not cur.rowcount:
+            raise HTTPException(status_code=404, detail="Memory not found.")
+        row = db.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone()
+    return dict(row)
+
+
 @router.delete("/memories/{memory_id}", status_code=204, dependencies=[Depends(require_device_token)])
 def delete_memory(memory_id: int):
     with _connect() as db:
@@ -175,6 +188,22 @@ def delete_workout(workout_id: int):
         cur = db.execute("DELETE FROM workouts WHERE id=?", (workout_id,))
         if not cur.rowcount:
             raise HTTPException(status_code=404, detail="Workout not found.")
+
+
+@router.get("/export", dependencies=[Depends(require_device_token)])
+def export_personal_data():
+    """Export personal data owned by this local JARVIS instance for user review/backup."""
+    with _connect() as db:
+        memories = [dict(row) for row in db.execute("SELECT * FROM memories ORDER BY id").fetchall()]
+        reminders = [dict(row) for row in db.execute("SELECT * FROM reminders ORDER BY due_at").fetchall()]
+        workouts = [dict(row) for row in db.execute("SELECT * FROM workouts ORDER BY performed_at").fetchall()]
+    return {
+        "exported_at": _now(),
+        "scope": "local JARVIS SQLite database",
+        "memories": memories,
+        "reminders": reminders,
+        "workouts": workouts,
+    }
 
 
 class ResearchRequest(BaseModel):
