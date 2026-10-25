@@ -14,7 +14,7 @@ Status meanings: **implemented** means code exists; **CI verified** means automa
 | Explicit persistent memory | Implemented | SQLite API plus browser review/edit/delete/export controls; no automatic extraction |
 | Reminders | Partially implemented | SQLite create/list/complete/delete and due polling; experimental Windows toast worker; no recurrence or Android notifications |
 | Live web research | Initial implementation | Authenticated DuckDuckGo HTML adapter returns source links/snippets; not full browser automation |
-| Native Android app | Initial implementation; CI build available | Kotlin/Compose, HTTPS health check, Android Keystore encrypted token, initial authenticated chat client; physical device test pending |
+| Native Android app | Initial implementation; CI build available | Kotlin/Compose, HTTPS health check, Android Keystore token, authenticated chat, tap-to-speak and spoken replies, English/Telugu choice; physical device test pending |
 | Windows companion agent | Restricted initial implementation | Authenticated status endpoint and user-confirmed allow-listed HTTPS URL opening; no arbitrary shell/app/file control |
 | Workout tracking | Implemented | SQLite activity log with list/delete |
 | Workout/nutrition coaching | Implemented; live-key test pending | Authenticated Gemini endpoints with general-information safeguards |
