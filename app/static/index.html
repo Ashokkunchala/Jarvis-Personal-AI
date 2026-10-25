@@ -41,7 +41,8 @@ const $ = (id) => document.getElementById(id);
 const messagesEl = $("messages"), statusEl = $("status");
 let history = [];
 let tasks = [];
-let deviceToken = "";\nlet agentToken = "";
+let deviceToken = "";
+let agentToken = "";
 let busy = false;
 const HISTORY_KEY = "jarvis.history.v1", SETTINGS_KEY = "jarvis.settings.v1", TASKS_KEY = "jarvis.tasks.v1";
 function setStatus(text, error=false){ statusEl.textContent=text; statusEl.className=error?"status error":"status"; }
@@ -144,7 +145,7 @@ $("agentStatus").addEventListener("click",async()=>{try{const data=await windows
 $("agentOpenUrl").addEventListener("click",async()=>{
  const url=$("agentUrl").value.trim();
  if(!url.startsWith("https://")){$("agentOutput").textContent="Only HTTPS URLs are allowed.";return;}
- if(!window.confirm("Ask the Windows agent to open this URL?\\n"+url+"\\nThe agent will also enforce its configured domain allow-list."))return;
+ if(!window.confirm("Ask the Windows agent to open this URL?\n"+url+"\nThe agent will also enforce its configured domain allow-list."))return;
  try{const data=await windowsAgentRequest("/v1/open-url",{url,confirmed:true});$("agentOutput").textContent=data.message||"Open request accepted.";}catch(err){$("agentOutput").textContent=err.message;}
 });
 function renderTasks(){const ul=$("tasks");ul.innerHTML="";tasks.forEach((t,i)=>{const li=document.createElement("li");const cb=document.createElement("input");cb.type="checkbox";cb.checked=t.done;cb.setAttribute("aria-label","Mark task complete");cb.addEventListener("change",()=>{tasks[i].done=cb.checked;persistTasks();renderTasks();});const label=document.createElement("span");label.textContent=t.text;if(t.done)label.style.textDecoration="line-through";const del=document.createElement("button");del.type="button";del.textContent="×";del.setAttribute("aria-label","Delete task");del.addEventListener("click",()=>{tasks.splice(i,1);persistTasks();renderTasks();});li.append(cb,label,del);ul.append(li);});}
