@@ -52,3 +52,35 @@ def test_workout_can_be_recorded(monkeypatch, tmp_path):
         assert response.status_code == 201
         assert response.json()["duration_minutes"] == 30
         assert client.get("/api/workouts", headers=headers).json()["items"][0]["activity"] == "Walking"
+
+
+
+def test_memory_edit_and_personal_data_export(monkeypatch, tmp_path):
+    with setup_client(monkeypatch, tmp_path) as client:
+        headers = {"Authorization": "Bearer test-token-that-is-at-least-32-characters"}
+        created = client.post(
+            "/api/memories", headers=headers,
+            json={"text": "Old preference", "category": "general"},
+        )
+        memory_id = created.json()["id"]
+        updated = client.put(
+            f"/api/memories/{memory_id}", headers=headers,
+            json={"text": "Prefers Telugu", "category": "language"},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["text"] == "Prefers Telugu"
+        exported = client.get("/api/export", headers=headers)
+        assert exported.status_code == 200
+        assert exported.json()["memories"][0]["category"] == "language"
+
+
+def test_delete_all_memories(monkeypatch, tmp_path):
+    with setup_client(monkeypatch, tmp_path) as client:
+        headers = {"Authorization": "Bearer test-token-that-is-at-least-32-characters"}
+        for value in ("One", "Two"):
+            assert client.post(
+                "/api/memories", headers=headers,
+                json={"text": value, "category": "test"},
+            ).status_code == 201
+        assert client.delete("/api/memories", headers=headers).status_code == 204
+        assert client.get("/api/memories", headers=headers).json()["items"] == []
