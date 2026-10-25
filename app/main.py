@@ -90,9 +90,9 @@ def chat(request: ChatRequest, authorization: str | None = Header(default=None))
         except Exception:
             logger.exception("Could not load saved memories; continuing without memory context")
             memory_instruction = ""
-        system_instruction = SYSTEM_INSTRUCTIONS + "\\n\\n" + language_instruction(request.language) + " " + name_instruction
+        system_instruction = SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(request.language) + " " + name_instruction
         if memory_instruction:
-            system_instruction += "\\n\\n" + memory_instruction
+            system_instruction += "\n\n" + memory_instruction
         response = client.models.generate_content(
             model=settings.gemini_model,
             contents=contents,
