@@ -119,7 +119,10 @@ async function loadReminders(){
 $("reminderForm").addEventListener("submit",async e=>{e.preventDefault();try{const due=new Date($("reminderDue").value);await apiRequest("/api/reminders",{method:"POST",body:JSON.stringify({title:$("reminderTitle").value.trim(),due_at:due.toISOString()})});$("reminderTitle").value="";await loadReminders();setStatus("Reminder saved. Notifications require the Windows worker.");}catch(err){setStatus(err.message,true);}});
 $("loadReminders").addEventListener("click",async()=>{try{await loadReminders();}catch(err){setStatus(err.message,true);}});
 async function loadWorkouts(){
- const data=await apiRequest("/api/workouts");$("workouts").innerHTML="";
+ const data=await apiRequest("/api/workouts");
+ const summary=await apiRequest("/api/workouts/summary");
+ $("workoutSummary").textContent="Last 7 days: "+summary.last_7_days.sessions+" sessions / "+summary.last_7_days.minutes+" minutes. All time: "+summary.all_time.sessions+" sessions / "+summary.all_time.minutes+" minutes.";
+ $("workouts").innerHTML="";
  data.items.forEach(w=>addApiRow("workouts",w.activity+" · "+w.duration_minutes+" min · "+new Date(w.performed_at).toLocaleDateString(),async()=>{await apiRequest("/api/workouts/"+w.id,{method:"DELETE"});await loadWorkouts();}));
 }
 $("workoutForm").addEventListener("submit",async e=>{e.preventDefault();try{await apiRequest("/api/workouts",{method:"POST",body:JSON.stringify({activity:$("workoutActivity").value.trim(),duration_minutes:Number($("workoutDuration").value),notes:$("workoutNotes").value.trim()})});$("workoutNotes").value="";await loadWorkouts();setStatus("Workout saved.");}catch(err){setStatus(err.message,true);}});
