@@ -1,8 +1,15 @@
 package com.ashok.jarvis
 
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
+import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +31,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,13 +54,58 @@ private fun SetupScreen() {
     var reply by remember { mutableStateOf("Connect to your private HTTPS backend to start chatting.") }
     var status by remember { mutableStateOf("Enter the HTTPS backend URL and device token.") }
     var busy by remember { mutableStateOf(false) }
+    var voiceBusy by remember { mutableStateOf(false) }
+
+    val speechLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        voiceBusy = false
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spoken.isNullOrBlank()) {
+                message = spoken
+                status = "Voice captured. Review the transcript, then tap Send."
+            } else {
+                status = "No speech was recognized. Try again."
+            }
+        } else {
+            status = "Voice input cancelled or unavailable."
+        }
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) launchSpeech(speechLauncher) { voiceBusy = it }
+        else status = "Microphone permission was denied. You can still type."
+    }
+    val tts = remember {
+        TextToSpeech(context) { result ->
+            if (result == TextToSpeech.SUCCESS) {
+                // Use the installed system voice. No audio is sent by text-to-speech.
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            tts.stop()
+            tts.shutdown()
+        }
+    }
+    LaunchedEffect(reply) {
+        if (!reply.startsWith("Connect to your private")) {
+            tts.language = Locale.getDefault().let { locale ->
+                if (locale.language == "te") locale else Locale.US
+            }
+            tts.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "jarvis-reply")
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("JARVIS Personal AI", style = MaterialTheme.typography.headlineMedium)
-        Text("Native Android prototype • Device token is encrypted with Android Keystore.")
+        Text("Native Android prototype • Voice is user-initiated; no always-on microphone.")
         OutlinedTextField(
             value = endpoint,
             onValueChange = { endpoint = it.trimEnd('/') },
@@ -98,6 +151,18 @@ private fun SetupScreen() {
             modifier = Modifier.fillMaxWidth()
         )
         Button(
+            enabled = !busy && !voiceBusy,
+            onClick = {
+                if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    launchSpeech(speechLauncher) { voiceBusy = it }
+                } else {
+                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+        ) { Text(if (voiceBusy) "Listening…" else "Speak to JARVIS") }
+        Button(
             enabled = !busy && message.isNotBlank(),
             onClick = {
                 scope.launch {
@@ -131,6 +196,23 @@ private fun SetupScreen() {
             status = "Stored device token cleared from this device."
         }) { Text("Forget device token") }
         Text(status)
+    }
+}
+
+private fun launchSpeech(
+    launcher: androidx.activity.result.ActivityResultLauncher<Intent>,
+    setBusy: (Boolean) -> Unit
+) {
+    try {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to JARVIS")
+        }
+        setBusy(true)
+        launcher.launch(intent)
+    } catch (error: Exception) {
+        setBusy(false)
     }
 }
 
