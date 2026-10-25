@@ -8,10 +8,18 @@ import platform
 import webbrowser
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Header, HTTPException\nfrom fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="JARVIS Windows Companion Agent", version="0.1.0")\napp.add_middleware(\n    CORSMiddleware,\n    allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],\n    allow_credentials=False,\n    allow_methods=["GET", "POST"],\n    allow_headers=["Authorization", "Content-Type"],\n)
+app = FastAPI(title="JARVIS Windows Companion Agent", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 
 def authorize(authorization: str | None = Header(default=None)):
