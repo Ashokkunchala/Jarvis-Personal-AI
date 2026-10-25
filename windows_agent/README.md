@@ -10,7 +10,7 @@ From the repository root in PowerShell:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-$env:JARVIS_AGENT_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(48))"
+$env:JARVIS_AGENT_TOKEN = (python -c "import secrets; print(secrets.token_urlsafe(48))")
 $env:JARVIS_ALLOWED_URL_HOSTS = "google.com;github.com;youtube.com"
 python -m uvicorn windows_agent.agent:app --host 127.0.0.1 --port 8765
 ```
@@ -23,4 +23,4 @@ Keep it bound to `127.0.0.1`. Do not expose the port or configure router forward
 - `GET /v1/status` — requires `Authorization: Bearer <token>`.
 - `POST /v1/open-url` — requires token and JSON `{"url":"https://github.com","confirmed":true}`. The domain must match the explicit allow-list.
 
-The calling UI must ask the user before sending `confirmed: true`. The server also rejects unapproved domains and non-HTTPS URLs. Treat this as a foundation, not a complete remote-control agent. Add a consent UI, audit log, rate limits, tests, and device pairing before use from another device.
+The browser dashboard has an experimental Windows companion panel. Enter the agent token in the dashboard and click **Save settings**; the token is held in page memory only. The dashboard asks for confirmation before requesting a URL open. CORS is restricted to the local dashboard origins. The server also rejects unapproved domains and non-HTTPS URLs. This remains a foundation, not a complete remote-control agent; audit logging, rate limits, and device pairing are still required.
