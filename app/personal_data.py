@@ -5,7 +5,7 @@ Keep the server bound to localhost until TLS and device pairing are deployed.
 """
 import hmac
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -191,6 +191,31 @@ def list_workouts():
     with _connect() as db:
         rows = db.execute("SELECT * FROM workouts ORDER BY performed_at DESC LIMIT 500").fetchall()
     return {"items": [dict(row) for row in rows]}
+
+
+@router.get("/workouts/summary", dependencies=[Depends(require_device_token)])
+def workout_summary():
+    """Return simple last-seven-day and all-time workout totals."""
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    with _connect() as db:
+        recent = db.execute(
+            "SELECT COUNT(*) AS sessions, COALESCE(SUM(duration_minutes),0) AS minutes "
+            "FROM workouts WHERE performed_at >= ?",
+            (since,),
+        ).fetchone()
+        overall = db.execute(
+            "SELECT COUNT(*) AS sessions, COALESCE(SUM(duration_minutes),0) AS minutes FROM workouts"
+        ).fetchone()
+        by_activity = db.execute(
+            "SELECT activity, COUNT(*) AS sessions, COALESCE(SUM(duration_minutes),0) AS minutes "
+            "FROM workouts WHERE performed_at >= ? GROUP BY activity ORDER BY minutes DESC LIMIT 10",
+            (since,),
+        ).fetchall()
+    return {
+        "last_7_days": dict(recent),
+        "all_time": dict(overall),
+        "by_activity_last_7_days": [dict(row) for row in by_activity],
+    }
 
 
 @router.post("/workouts", status_code=201, dependencies=[Depends(require_device_token)])
