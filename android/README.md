@@ -9,7 +9,7 @@ The native Kotlin + Jetpack Compose app currently supports:
 - Language selection cycling through adaptive/auto, Indian English, and Telugu.
 - Quick shortcuts to Android device, Wi-Fi, Bluetooth, and JARVIS app-permission settings; supported voice transcripts can be reviewed and explicitly confirmed before opening a system screen.
 - Authenticated reminder creation and reminder-list refresh through the backend.
-- Cleartext HTTP disabled; there is no always-on microphone.
+- Cleartext HTTP disabled; there is no always-on microphone or guaranteed auto-start after reboot.
 
 Memory management screens, reminder notifications/recurrence, workout tracking, device pairing/revocation, and background sync are not implemented in the Android app yet.
 
@@ -24,7 +24,7 @@ cd android
 gradle assembleDebug
 ```
 
-The expected APK path after a successful build is `app/build/outputs/apk/debug/app-debug.apk`. A CI build does not prove that the app has been installed on your phone or that your backend is reachable from it.
+The expected APK path after a successful build is `app/build/outputs/apk/debug/app-debug.apk`. A CI build does not prove that the app has been installed on your phone or that your backend is reachable from it. Android 14 restricts starting microphone foreground services from boot; launch JARVIS yourself and tap Speak to start microphone use. The Windows one-file installer does not install the Android APK.
 
 ## Connect your phone safely
 
