@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from google import genai
@@ -62,6 +62,28 @@ def home():
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "jarvis-personal-ai"}
+
+
+@app.post("/api/local-session")
+def local_session(request: Request) -> dict[str, str]:
+    """Return the local device token to this same-origin loopback UI only.
+
+    This supports the localhost desktop install without persisting a bearer token
+    in browser storage. Remote clients and requests without an exact same-origin
+    Origin header are rejected.
+    """
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "localhost"}:
+        raise HTTPException(status_code=403, detail="Local desktop session is only available on loopback.")
+    host = request.headers.get("host", "")
+    origin = request.headers.get("origin", "")
+    expected_origin = f"{request.url.scheme}://{host}"
+    if not host or not origin or not hmac.compare_digest(origin.rstrip("/"), expected_origin.rstrip("/")):
+        raise HTTPException(status_code=403, detail="Same-origin browser request required.")
+    token = settings.jarvis_api_token
+    if len(token) < 32 or token.startswith("replace_"):
+        raise HTTPException(status_code=503, detail="Local device token is not configured.")
+    return {"token": token}
 
 
 @app.post("/api/chat", response_model=ChatResponse)
