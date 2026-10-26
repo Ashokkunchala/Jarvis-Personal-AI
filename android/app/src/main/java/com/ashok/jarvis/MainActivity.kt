@@ -63,6 +63,13 @@ private fun SetupScreen() {
     var reminderTitle by remember { mutableStateOf("") }
     var reminderDueAt by remember { mutableStateOf("") }
     var reminders by remember { mutableStateOf(listOf<String>()) }
+    val phoneSettingsAction = when (message.trim().lowercase()) {
+        "open settings", "open device settings", "device settings" -> Settings.ACTION_SETTINGS
+        "open wifi settings", "open wi-fi settings", "wifi settings", "wi-fi settings" -> Settings.ACTION_WIFI_SETTINGS
+        "open bluetooth settings", "bluetooth settings" -> Settings.ACTION_BLUETOOTH_SETTINGS
+        "open app permissions", "open jarvis app permissions", "jarvis app permissions" -> Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+        else -> null
+    }
 
     val speechLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -240,6 +247,17 @@ private fun SetupScreen() {
                 }
             }
         ) { Text(if (voiceBusy) "Listening…" else "Speak to JARVIS") }
+        Button(
+            enabled = !busy && phoneSettingsAction != null,
+            onClick = {
+                val action = phoneSettingsAction
+                if (action != null) {
+                    val uri = if (action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) Uri.parse("package:" + context.packageName) else null
+                    openSystemSettings(context, action, status = { status = it }, uri = uri)
+                }
+            }
+        ) { Text("Run recognized phone command") }
+        Text("Supported voice commands: open device settings, open Wi-Fi settings, open Bluetooth settings, open JARVIS app permissions.")
         Button(
             enabled = !busy && message.isNotBlank(),
             onClick = {
