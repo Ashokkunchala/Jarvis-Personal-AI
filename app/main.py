@@ -73,11 +73,12 @@ def chat(request: ChatRequest, authorization: str | None = Header(default=None))
     if not hmac.compare_digest(supplied_token, expected_token):
         raise HTTPException(status_code=401, detail="Missing or invalid JARVIS device token.")
 
+    client = getattr(app.state, "gemini_client", None)
     provider_order = configured_provider_order(settings)
+    if client is not None and "gemini" not in provider_order:
+        provider_order.insert(0, "gemini")
     if not provider_order:
         raise HTTPException(status_code=503, detail="No AI provider configured. Set GEMINI_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY on the server.")
-
-    client = getattr(app.state, "gemini_client", None)
     contents = [
         {"role": item.role, "parts": [{"text": item.content}]}
         for item in request.history[-20:]
@@ -142,10 +143,12 @@ def chat_stream(request: ChatRequest, authorization: str | None = Header(default
     if not hmac.compare_digest(supplied_token, expected_token):
         raise HTTPException(status_code=401, detail="Missing or invalid JARVIS device token.")
 
+    client = getattr(app.state, "gemini_client", None)
     provider_order = configured_provider_order(settings)
+    if client is not None and "gemini" not in provider_order:
+        provider_order.insert(0, "gemini")
     if not provider_order:
         raise HTTPException(status_code=503, detail="No AI provider configured. Set GEMINI_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY on the server.")
-    client = getattr(app.state, "gemini_client", None)
 
     contents = [
         {"role": item.role, "parts": [{"text": item.content}]}
