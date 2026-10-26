@@ -1,10 +1,13 @@
 # Changelog
 
-# Unreleased
-- Added authenticated server-sent-event streaming for browser chat and a stop control; retained the JSON endpoint for native clients.
-- Updated the dashboard capability descriptions and API documentation to match shipped features.
-- Added persistent reminder notification deduplication, capped exponential retries, and terminal delivery status for the optional Windows worker.
-- Documented worker state-file behavior and its delivery-status limits.
+## Unreleased
+- Reworked the browser dashboard into a voice-first JARVIS command centre with a responsive layout, animated assistant orb, visible listening/thinking/speaking/ready states, and explicit voice controls.
+- Added transcript-first capture: speech recognition displays interim/final text for review and does not automatically submit a dictated phrase.
+- Added voice cancellation and stop-speaking controls, plus reduced-motion accessibility support.
+- Added real-time voice integration plan and physical-device acceptance checklist; the new interface does not claim full-duplex audio until the Live API session path is implemented and verified.
+- Fixed CI dependency mismatch: install the project with development extras so pytest-cov is available for the configured coverage flags.
+- Added a Python lint job and regression test coverage for API security headers.
+- Added an evidence-based release verification checklist.
 
 ## 0.2.0 — Browser MVP and setup improvements
 - Added a responsive JARVIS chat UI served by FastAPI.
@@ -25,4 +28,4 @@
 - Documented architecture, setup, safety boundaries, and phased roadmap.
 
 ## Not yet implemented
-Native Android app, Windows system-control agent, live web search, cloud memory, real notifications, production authentication, and public deployment remain future work.
+Full-duplex low-latency voice across browser and Android, production per-device authentication and revocation, reliable cross-device/recurring notifications, and secure public deployment remain unfinished. Use the feature status and milestone documentation for exact current boundaries.

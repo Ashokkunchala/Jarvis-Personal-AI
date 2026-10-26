@@ -1,5 +1,6 @@
 from html.parser import HTMLParser
 from pathlib import Path
+
 import shutil
 import subprocess
 import tempfile
@@ -46,3 +47,38 @@ def test_inline_javascript_syntax_when_node_is_available():
             assert result.returncode == 0, result.stderr
         finally:
             Path(path).unlink(missing_ok=True)
+
+
+def test_voice_first_interface_has_live_audio_and_fallback_controls():
+    html = HTML_PATH.read_text(encoding="utf-8")
+    for expected in (
+        'id="liveVoiceConnect"',
+        'id="liveVoiceStop"',
+        'id="liveVoiceInterrupt"',
+        'id="liveVoiceStatus"',
+        'id="liveVoiceTranscript"',
+        'src="/static/live_voice.js"',
+        'id="voiceOrb"',
+        "Keep this backend private",
+    ):
+        assert expected in html
+    live_client = (HTML_PATH.parent / "live_voice.js").read_text(encoding="utf-8")
+    for expected in (
+        '"/api/live-voice?ticket="',
+        '"/api/live-voice-ticket"',
+        'Authorization:"Bearer "+token',
+        'type:"audio"',
+        'type:"audio_end"',
+        "getUserMedia",
+        "stopPlayback",
+    ):
+        assert expected in live_client
+
+
+def test_external_live_voice_javascript_syntax_when_node_is_available():
+    node = shutil.which("node")
+    if not node:
+        return
+    script = HTML_PATH.parent / "live_voice.js"
+    result = subprocess.run([node, "--check", str(script)], text=True, capture_output=True, check=False)
+    assert result.returncode == 0, result.stderr

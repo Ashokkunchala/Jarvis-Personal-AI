@@ -11,6 +11,8 @@ from google import genai
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
+from app.live_voice import router as live_voice_router
+from app.middleware.security import SecurityHeadersMiddleware
 from app.personal_data import get_memory_context, require_device_token, router as personal_data_router
 from app.personality import SYSTEM_INSTRUCTIONS, language_instruction
 from app.schemas import ChatRequest, ChatResponse
@@ -36,10 +38,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="JARVIS Personal AI API",
     description="A Gemini-powered personal assistant prototype.",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 app.include_router(personal_data_router)
+app.include_router(live_voice_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -47,6 +50,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
 )
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 @app.get("/", include_in_schema=False)
