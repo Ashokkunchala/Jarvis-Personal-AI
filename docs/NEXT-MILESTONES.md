@@ -16,6 +16,7 @@
 - [x] Add an authenticated server-side WebSocket bridge; keep provider API credentials on the backend.
 - [x] Add same-origin and allow-listed-origin checks with regression tests.
 - [x] Make the Live API model and voice configurable (`GEMINI_LIVE_MODEL`, `GEMINI_LIVE_VOICE`).
+- [x] Exchange the long-lived bearer token for a single-use, 60-second WebSocket ticket before opening live voice.
 - [ ] Confirm the configured model is available to the owner's API project; exercise a real microphone-to-model-to-speaker session and interruption on Chrome/Android Chrome.
 - [ ] Improve audio worklet/queueing, reconnect/session expiry, live captions, and rate/budget guardrails.
 - [ ] Add native Android real-time bidirectional audio (not only tap-to-speak recognition and TTS), with explicit microphone session indicator and Stop control.
@@ -31,7 +32,9 @@
 - Use Android WorkManager for deferrable background sync. Android restricts always-on microphone and background activity; no promise of unrestricted continuous listening.
 - Build and sign an APK on a machine with Android SDK/Gradle. CI source checks do not prove a device build.
 - [ ] Install the latest APK on a physical Android 14 device and test login/token persistence, HTTPS chat, speech input/output, disconnects, and error states.
-- [ ] Integrate explicit memories and reminders in the native app with review/delete controls.
+- [x] Add native Android quick links to device/Wi-Fi/Bluetooth settings and JARVIS app permissions; Android keeps protected changes in system UI.
+- [x] Add authenticated reminder creation and list refresh in the native app.
+- [ ] Integrate explicit memories with review/delete controls and add reminder notifications/recurrence.
 
 ## Milestone 4 — live research and browser automation
 - Research adapter with source URLs, timestamps, timeouts, domain allowlists, and clear separation between webpage content and trusted instructions.
