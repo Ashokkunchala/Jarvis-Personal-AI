@@ -24,9 +24,9 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Install project with development extras
-        run: python -m pip install -e ".[dev]"
+          cache-dependency-path: requirements-dev.txt
+      - name: Install runtime and development dependencies
+        run: python -m pip install -r requirements-dev.txt pytest-cov
       - name: Run tests with coverage
         run: python -m pytest -q
 
@@ -40,9 +40,9 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Install project and lint tool
-        run: python -m pip install -e . ruff
+          cache-dependency-path: requirements-dev.txt
+      - name: Install runtime dependencies and lint tool
+        run: python -m pip install -r requirements-dev.txt ruff
       - name: Check Python lint
         run: ruff check app jarvis tests jarvis_cli.py
 
