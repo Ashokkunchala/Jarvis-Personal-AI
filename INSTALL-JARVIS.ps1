@@ -64,23 +64,23 @@ try {
             throw "Python 3.11+ is required and winget is unavailable. Install Python from https://www.python.org/downloads/windows/ and rerun this installer."
         }
 
-        Write-Host "No Python 3.11+ runtime was found. Installing Python 3.12 for this Windows user..." -ForegroundColor Yellow
-        & $wingetCommand.Source install --id Python.Python.3.12 -e --scope user --silent --accept-package-agreements --accept-source-agreements
+        Write-Host "No suitable Python runtime was found. Installing the latest stable Python release (3.14) for this Windows user..." -ForegroundColor Yellow
+        & $wingetCommand.Source install --id Python.Python.3.14 -e --scope user --silent --accept-package-agreements --accept-source-agreements
         if ($LASTEXITCODE -ne 0) {
-            throw "Automatic Python installation failed. Install Python 3.11+ from https://www.python.org/downloads/windows/ and rerun this installer."
+            throw "Automatic Python installation failed. Install the latest stable Python from https://www.python.org/downloads/windows/ and rerun this installer."
         }
 
         # Prefer the common per-user install path, then re-probe the launcher in case its path differs.
         $pythonExe = @(
-            (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"),
-            (Join-Path $env:LOCALAPPDATA "Programs\Python\Python311\python.exe")
+            (Join-Path $env:LOCALAPPDATA "Programs\Python\Python314\python.exe"),
+            (Join-Path $env:LOCALAPPDATA "Programs\Python\Python313\python.exe")
         ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
         if (-not $pythonExe) {
             $pyCommand = Get-Command py -ErrorAction SilentlyContinue
             if ($pyCommand) {
                 try {
-                    $candidate = (& $pyCommand.Source -3.12 -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1)
+                    $candidate = (& $pyCommand.Source -3.14 -c "import sys; print(sys.executable) 2>$null | Select-Object -First 1)
                     if ($LASTEXITCODE -eq 0 -and $candidate) { $pythonExe = $candidate.Trim() }
                 } catch {
                     $pythonExe = $null
