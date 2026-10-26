@@ -14,8 +14,8 @@ JSON server events:
   ready, audio, text, transcript, turn_complete, interrupted, error
 
 This is a server-brokered session; the client never receives the Gemini key.
-Keep the server private until production session tickets, HTTPS, rate limits,
-and origin restrictions are in place.
+The browser exchanges its bearer token for a single-use, 60-second WebSocket ticket.
+Keep the server private until HTTPS, rate limits, and production device pairing are in place.
 """
 from __future__ import annotations
 
@@ -24,9 +24,11 @@ import base64
 import binascii
 import json
 import logging
+import secrets
+import time
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from google import genai
 from google.genai import types
 from starlette.websockets import WebSocketState
@@ -40,6 +42,31 @@ router = APIRouter()
 
 MAX_AUDIO_BYTES = 64 * 1024
 MAX_TEXT_CHARS = 4000
+LIVE_TICKET_TTL_SECONDS = 60
+_live_tickets: dict[str, float] = {}
+
+
+def _issue_live_ticket() -> str:
+    """Issue a one-use, short-lived WebSocket ticket."""
+    now = time.monotonic()
+    for ticket, expires_at in list(_live_tickets.items()):
+        if expires_at <= now:
+            _live_tickets.pop(ticket, None)
+    ticket = secrets.token_urlsafe(32)
+    _live_tickets[ticket] = now + LIVE_TICKET_TTL_SECONDS
+    return ticket
+
+
+def _consume_live_ticket(ticket: str) -> bool:
+    """Consume a ticket exactly once and reject missing or expired tickets."""
+    expires_at = _live_tickets.pop(ticket, None)
+    return expires_at is not None and expires_at > time.monotonic()
+
+
+@router.post("/api/live-voice-ticket", dependencies=[Depends(require_device_token)])
+def create_live_voice_ticket():
+    """Mint a 60-second single-use ticket after bearer-token authentication."""
+    return {"ticket": _issue_live_ticket(), "expires_in": LIVE_TICKET_TTL_SECONDS}
 
 
 def _origin_is_allowed(origin: str | None, host: str | None, allowed_origins: set[str]) -> bool:
@@ -75,13 +102,9 @@ async def live_voice(websocket: WebSocket):
         await websocket.close(code=4403, reason="origin not allowed")
         return
 
-    try:
-        # WebSocket handshakes do not consistently support Authorization headers
-        # in browsers; use the existing configured bearer token for now.
-        supplied = websocket.query_params.get("token", "")
-        require_device_token(authorization=f"Bearer {supplied}" if supplied else None)
-    except Exception:
-        await websocket.close(code=4401, reason="unauthorized")
+    ticket = websocket.query_params.get("ticket", "")
+    if not ticket or not _consume_live_ticket(ticket):
+        await websocket.close(code=4401, reason="invalid or expired session ticket")
         return
 
     if not settings.gemini_api_key or settings.gemini_api_key.startswith("replace_"):
