@@ -40,8 +40,6 @@ router = APIRouter()
 
 MAX_AUDIO_BYTES = 64 * 1024
 MAX_TEXT_CHARS = 4000
-MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
-VOICE = "Aoede"
 
 
 def _origin_is_allowed(origin: str | None, host: str | None, allowed_origins: set[str]) -> bool:
@@ -101,17 +99,17 @@ async def live_voice(websocket: WebSocket):
                 "Do not claim an action was performed unless the connected tool reports success. "
                 "For consequential actions, ask for explicit confirmation."
             ),
-            "speech_config": {"voice_config": {"prebuilt_voice_config": {"voice_name": VOICE}}},
+            "speech_config": {"voice_config": {"prebuilt_voice_config": {"voice_name": settings.gemini_live_voice}}},
             "input_audio_transcription": {},
             "output_audio_transcription": {},
         }
-        async with client.aio.live.connect(model=MODEL, config=config) as session:
+        async with client.aio.live.connect(model=settings.gemini_live_model, config=config) as session:
             await _send(websocket, {
                 "type": "ready",
-                "model": MODEL,
+                "model": settings.gemini_live_model,
                 "input_mime": "audio/pcm;rate=16000",
                 "output_sample_rate": 24000,
-                "voice": VOICE,
+                "voice": settings.gemini_live_voice,
             })
 
             async def pump_provider():
