@@ -68,18 +68,110 @@ try {
         $template = $template -replace '(?m)^SECRET_KEY=.*$', "SECRET_KEY=$secret"
         $template = $template -replace '(?m)^HOST=.*$', "HOST=127.0.0.1"
         $template = $template -replace '(?m)^PORT=.*$', "PORT=8000"
-        Set-Content -Path $envPath -Value $template -Encoding utf8
         Write-Host ""
         Write-Host "Enter keys. They are saved only to your local .env file." -ForegroundColor Yellow
         Write-Host "Gemini is required for current live voice and terminal features." -ForegroundColor Yellow
         $gemini = Read-Host "Gemini API key (required)"
         if ([string]::IsNullOrWhiteSpace($gemini)) { throw "Gemini API key is required for voice. Rerun after obtaining one." }
-        Add-Content -Path $envPath -Value ([Environment]::NewLine + "GEMINI_API_KEY=$gemini") -Encoding utf8
         $openrouter = Read-Host "OpenRouter API key (optional, Enter to skip)"
-        if (-not [string]::IsNullOrWhiteSpace($openrouter)) { Add-Content -Path $envPath -Value "OPENROUTER_API_KEY=$openrouter" -Encoding utf8 }
         $groq = Read-Host "Groq API key (optional, Enter to skip)"
-        if (-not [string]::IsNullOrWhiteSpace($groq)) { Add-Content -Path $envPath -Value "GROQ_API_KEY=$groq" -Encoding utf8 }
-        Add-Content -Path $envPath -Value "JARVIS_AI_PROVIDER=auto" -Encoding utf8
+        $template = $template -replace '(?m)^GEMINI_API_KEY=.*
+    } else {
+        Write-Host "Keeping existing .env credentials and settings." -ForegroundColor Green
+    }
+
+    $sessionScript = Join-Path $installRoot "scripts\start-jarvis-session.ps1"
+    if (-not (Test-Path $sessionScript)) { throw "Startup script is missing from installed package." }
+    $actionArgs = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $sessionScript + '"'
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $actionArgs
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+    $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    Register-ScheduledTask -TaskName "JARVIS Personal AI" -Action $action -Trigger $trigger -Principal $principal -Settings $taskSettings -Description "Starts the local JARVIS assistant after this user signs in." -Force | Out-Null
+
+    Write-Host "Installation complete. Starting JARVIS..." -ForegroundColor Green
+    & $sessionScript
+    Write-Host "JARVIS will start after you sign in to Windows."
+    Write-Host "UI: http://127.0.0.1:8000"
+    Write-Host "Installed at: $installRoot"
+    Write-Host "Disable auto-start in Task Scheduler by disabling the JARVIS Personal AI task."
+} finally {
+    Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+, "GEMINI_API_KEY=$gemini"
+        $template = $template -replace '(?m)^OPENROUTER_API_KEY=.*
+    } else {
+        Write-Host "Keeping existing .env credentials and settings." -ForegroundColor Green
+    }
+
+    $sessionScript = Join-Path $installRoot "scripts\start-jarvis-session.ps1"
+    if (-not (Test-Path $sessionScript)) { throw "Startup script is missing from installed package." }
+    $actionArgs = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $sessionScript + '"'
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $actionArgs
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+    $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    Register-ScheduledTask -TaskName "JARVIS Personal AI" -Action $action -Trigger $trigger -Principal $principal -Settings $taskSettings -Description "Starts the local JARVIS assistant after this user signs in." -Force | Out-Null
+
+    Write-Host "Installation complete. Starting JARVIS..." -ForegroundColor Green
+    & $sessionScript
+    Write-Host "JARVIS will start after you sign in to Windows."
+    Write-Host "UI: http://127.0.0.1:8000"
+    Write-Host "Installed at: $installRoot"
+    Write-Host "Disable auto-start in Task Scheduler by disabling the JARVIS Personal AI task."
+} finally {
+    Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+, "OPENROUTER_API_KEY=$openrouter"
+        $template = $template -replace '(?m)^GROQ_API_KEY=.*
+    } else {
+        Write-Host "Keeping existing .env credentials and settings." -ForegroundColor Green
+    }
+
+    $sessionScript = Join-Path $installRoot "scripts\start-jarvis-session.ps1"
+    if (-not (Test-Path $sessionScript)) { throw "Startup script is missing from installed package." }
+    $actionArgs = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $sessionScript + '"'
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $actionArgs
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+    $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    Register-ScheduledTask -TaskName "JARVIS Personal AI" -Action $action -Trigger $trigger -Principal $principal -Settings $taskSettings -Description "Starts the local JARVIS assistant after this user signs in." -Force | Out-Null
+
+    Write-Host "Installation complete. Starting JARVIS..." -ForegroundColor Green
+    & $sessionScript
+    Write-Host "JARVIS will start after you sign in to Windows."
+    Write-Host "UI: http://127.0.0.1:8000"
+    Write-Host "Installed at: $installRoot"
+    Write-Host "Disable auto-start in Task Scheduler by disabling the JARVIS Personal AI task."
+} finally {
+    Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+, "GROQ_API_KEY=$groq"
+        $template = $template -replace '(?m)^JARVIS_AI_PROVIDER=.*
+    } else {
+        Write-Host "Keeping existing .env credentials and settings." -ForegroundColor Green
+    }
+
+    $sessionScript = Join-Path $installRoot "scripts\start-jarvis-session.ps1"
+    if (-not (Test-Path $sessionScript)) { throw "Startup script is missing from installed package." }
+    $actionArgs = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $sessionScript + '"'
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $actionArgs
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+    $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    Register-ScheduledTask -TaskName "JARVIS Personal AI" -Action $action -Trigger $trigger -Principal $principal -Settings $taskSettings -Description "Starts the local JARVIS assistant after this user signs in." -Force | Out-Null
+
+    Write-Host "Installation complete. Starting JARVIS..." -ForegroundColor Green
+    & $sessionScript
+    Write-Host "JARVIS will start after you sign in to Windows."
+    Write-Host "UI: http://127.0.0.1:8000"
+    Write-Host "Installed at: $installRoot"
+    Write-Host "Disable auto-start in Task Scheduler by disabling the JARVIS Personal AI task."
+} finally {
+    Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+, "JARVIS_AI_PROVIDER=auto"
+        Set-Content -Path $envPath -Value $template -Encoding utf8
     } else {
         Write-Host "Keeping existing .env credentials and settings." -ForegroundColor Green
     }
