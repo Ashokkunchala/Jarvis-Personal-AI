@@ -15,3 +15,31 @@ def test_live_voice_rejects_unconfigured_cross_origin():
 
 def test_live_voice_allows_token_authenticated_native_client_without_origin():
     assert _origin_is_allowed(None, "127.0.0.1:8000", set())
+
+
+
+def test_live_voice_ticket_is_single_use():
+    from app.live_voice import _consume_live_ticket, _issue_live_ticket
+
+    ticket = _issue_live_ticket()
+    assert _consume_live_ticket(ticket) is True
+    assert _consume_live_ticket(ticket) is False
+
+
+def test_live_voice_ticket_endpoint_requires_device_token(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    monkeypatch.setenv("JARVIS_API_TOKEN", "test-token-that-is-at-least-32-characters")
+    monkeypatch.setenv("JARVIS_DB_PATH", str(tmp_path / "jarvis.sqlite3"))
+    with TestClient(app) as client:
+        denied = client.post("/api/live-voice-ticket")
+        assert denied.status_code == 401
+        response = client.post(
+            "/api/live-voice-ticket",
+            headers={"Authorization": "Bearer test-token-that-is-at-least-32-characters"},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["expires_in"] == 60
+        assert len(payload["ticket"]) >= 32
