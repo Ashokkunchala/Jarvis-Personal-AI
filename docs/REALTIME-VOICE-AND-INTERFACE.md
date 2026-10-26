@@ -1,70 +1,48 @@
-# JARVIS real-time voice and interface plan
+# JARVIS real-time voice and interface
 
-## Goal
+## What is implemented on the feature branch
 
-Make JARVIS a voice-first personal assistant with an assistant-style interface across desktop and Android. The interface should clearly show microphone state, connection state, transcription, response playback, tool activity, and confirmation requests.
+- Browser dashboard with responsive JARVIS orb, ready/listening/thinking/speaking states, text chat, transcript view, and explicit live voice start/stop/interruption controls.
+- Browser Live Voice client that requests microphone access after a user click, down-samples audio to 16 kHz PCM16, streams frames to the backend, and plays returned 24 kHz PCM audio.
+- FastAPI WebSocket route at `/api/live-voice`. It authenticates the configured bearer token, checks browser Origin against configured CORS origins, keeps the Gemini API key on the server, validates payload sizes, opens a Gemini Live session, forwards audio/text/transcripts, and closes the session on disconnect.
+- Typed chat remains available as a fallback. Voice-session model tool calls are not permitted to execute device actions.
 
-## Current baseline (code exists; not all behavior has been device-verified)
+## Not yet proven / not production-ready
 
-- Browser dashboard: streaming text responses; optional browser speech-recognition input; optional OS/browser text-to-speech output; English/Telugu language selection.
-- Android: native Compose screen; tap-to-speak through Android speech-recognition intent; text-to-speech replies; token stored with Android Keystore.
-- Desktop terminal: realtime Textual UI with streaming text and a tool activity log.
-- Experimental Python Gemini Live client exists at `jarvis/core/voice/gemini_live_client.py`; its protocol, audio format, authentication, current model support, reconnect behavior, cancellation, and real-device audio path require verification before product use.
-- The browser and Android production paths are not yet a unified, full-duplex low-latency voice session. Do not describe the prototype as having continuous live voice until integration and acceptance testing are complete.
+- The Live API model configured in `app/live_voice.py` is a preview model ID. Confirm current availability and API account access using official Gemini Live documentation before relying on it; do not assume all API accounts have access.
+- The WebSocket query currently carries the configured bearer token because browser WebSocket APIs cannot attach an Authorization header. Treat URLs as sensitive, keep server logs from recording query strings, and replace this compatibility path with short-lived one-time session tickets before public use.
+- The audio client and server protocol have been committed but still require a live API-key smoke test and browser microphone/playback tests. They have not been confirmed on a physical Android phone.
+- The browser uses Web Audio `ScriptProcessorNode` for a starter implementation. A production client should move capture to AudioWorklet, add bounded queues/backpressure, better resampling, and explicit audio focus/cancel handling.
+- User speech may interrupt model playback only after the backend/model reports interruption or the user taps **Interrupt JARVIS**. The current stop control sends an interrupt instruction; confirm actual barge-in behavior with the Live API session.
+- Live audio responses and transcripts are streamed to the page. The raw audio is not explicitly saved by the client, but audio is sent to the configured Gemini API as part of the Live session.
+- Android remains tap-to-speak via system speech recognition + system TTS; native continuous Live audio is not yet connected to the WebSocket.
 
-## Target interaction design
+## Security expectations
 
-1. **Idle / ready:** JARVIS orb, connection indicator, language preference and clear microphone button.
-2. **Listening:** obvious visual indicator, elapsed/active status, user-visible transcript, and a one-tap stop/cancel control.
-3. **Thinking:** stream text as it arrives and show safe status/tool activity without exposing secrets.
-4. **Speaking:** show response text and playback state; allow interruption.
-5. **Action approval:** display the exact action, target and effect. Require explicit approval for messages, purchases, file changes, settings, installs, shell commands, and infrastructure mutations.
-6. **Offline / error:** show a useful explanation and a retry route; never silently pretend the audio request succeeded.
-
-## Required engineering stages
-
-### A. Web voice UI
-- Keep current browser-compatible speech input as a fallback and make its limitations visible.
-- Improve compact/mobile layout and provide an explicit voice mode, listening/speaking states, transcript review, cancel, and stop-speaking controls.
-- Never access microphone without a user gesture and browser permission.
-- Browser recognition and OS voices are a compatibility path, not proof of natural full-duplex audio.
-
-### B. Real-time audio transport
-- Choose and verify a currently supported Gemini Live model and SDK/protocol using official documentation before implementation; do not hardcode a guessed or preview model ID.
-- Keep the provider API key server-side. Do not ship Gemini credentials in Android resources or browser JavaScript.
-- Build a server-side session broker with short-lived per-session credentials, authentication, origin checks, session expiry, rate/time limits and safe disconnect.
-- Stream audio frames with bounded buffering, interruption handling, reconnect/backoff, input/output format checks and cancellation.
-- Avoid logging raw audio/transcripts by default. Explicitly disclose whether a provider receives audio and apply the user's consent choice.
-
-### C. Android voice-first UI
-- Retain user-initiated microphone permission and HTTPS-only backend traffic.
-- Replace the current one-message screen with a conversation timeline, animated but accessible listening/speaking indicator, language picker, transcript review, stop/interruption control and connection state.
-- Handle lifecycle changes, rotation, screen lock, offline state, audio focus, TTS shutdown and permission denial.
-- Use WorkManager for deferrable routines only; do not promise unrestricted microphone access in the background.
-
-### D. Personal-assistant skills
-- Add a consent-based action router for reminders, memory, research, coaching, laptop status and Android status.
-- Prefer read-only tools first. Require the user's confirmation for consequential actions.
-- Make results visible in the conversation, including success/failure and a record of what action was attempted.
-- Add recurring reminders and cross-device notifications only after durable scheduling, timezone, retry and duplicate-delivery tests.
+- Never expose the Gemini key in browser JS or Android resources.
+- Do not expose this shared-token prototype through a public tunnel.
+- Before a remote deployment, implement per-device pairing/revocation, one-time live session tickets, rate/time/token budgets, request quotas, session limits, safe error responses, audit logs with token redaction, TLS, allowed origins, and backup/restore.
+- No hidden microphone or automatic background recording. Show when audio is being captured and provide an obvious stop button.
+- The live audio route deliberately does not execute model tool calls. Device actions require the separate JARVIS confirmation workflow.
 
 ## Acceptance checklist
 
-- [ ] Browser: microphone denied / allowed / unavailable paths.
-- [ ] Browser: transcript can be reviewed and cancelled before submission.
-- [ ] Browser: stream appears incrementally, stop cancels cleanly, and retry works.
-- [ ] Browser: voice output can be interrupted and does not start unless opted in.
-- [ ] Android 14: permission request occurs on demand; permission denial leaves typed chat usable.
-- [ ] Android: HTTPS, device token storage/clear, lifecycle changes, reconnect and TTS interruption tested on a physical phone.
-- [ ] Live audio: only official supported protocol/model; no provider key embedded in client; session expiration and quota limits verified.
-- [ ] Device action: all high-impact actions request confirmation; rejected/cancelled actions do not execute.
-- [ ] Privacy: microphone state is visible; no hidden recording; raw audio retention is explicitly documented.
-- [ ] CI: Python tests, lint and Android debug build pass.
-- [ ] Manual test report and known limitations are recorded in `docs/VERIFICATION-CHECKLIST.md`.
+- [ ] Python unit/API suite passes in the latest PR workflow.
+- [ ] Android debug APK build passes in the latest PR workflow.
+- [ ] Browser: microphone denied / allowed / unavailable paths tested.
+- [ ] Live API: current model is available, setup handshake succeeds, and a real voice turn completes.
+- [ ] Browser: PCM input and output sound correct on current Chrome and Edge.
+- [ ] Browser: stop releases the microphone and stops queued audio; interruption behavior is verified.
+- [ ] WebSocket: invalid token, disallowed origin, oversized audio, malformed base64, and provider timeout paths tested.
+- [ ] Physical Android 14 device: HTTPS, token storage/clear, TTS, permission denial, and typed fallback tested.
+- [ ] Native Android full-duplex audio transport implemented and tested.
+- [ ] Short-lived session tickets replace tokens in WebSocket query parameters.
+- [ ] Device-action broker integrated only with visible confirmation and cancellation.
+- [ ] Production deployment threat model and review complete.
 
-## Run today's baseline
+## Run the existing app
 
-Windows PowerShell from the repository root:
+Windows PowerShell:
 
 ```powershell
 .\scripts\setup-windows.ps1
@@ -72,6 +50,6 @@ Windows PowerShell from the repository root:
 .\scripts\start-windows.ps1
 ```
 
-Open `http://127.0.0.1:8000`. In the dashboard, choose the reply language, enter the configured token, and select **Save settings**. Tap **Speak** to capture one utterance; review its transcript and press Send. Enable spoken replies if desired. This is the current browser voice baseline, not continuous full-duplex voice.
+Open `http://127.0.0.1:8000`, paste the same token configured on the backend, and click **Save settings**. Tap **Start Live Voice** only after confirming the Gemini Live model is enabled for your API account. If the Live session cannot connect, the typed/Dictate path remains the fallback.
 
-Keep the backend local/private. Do not expose the current shared-token prototype through a public tunnel.
+Keep the backend local/private. Do not use a public tunnel until the security acceptance checklist is complete.
