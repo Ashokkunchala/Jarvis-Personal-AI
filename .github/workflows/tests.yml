@@ -42,6 +42,31 @@ jobs:
       - name: Compile front-end regression test
         run: python -m py_compile tests/test_frontend.py
 
+  windows-installer-check:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Parse installer and startup PowerShell scripts
+        shell: pwsh
+        run: |
+          $files = @(
+            "INSTALL-JARVIS.ps1",
+            "scripts/setup-windows.ps1",
+            "scripts/start-windows.ps1",
+            "scripts/start-jarvis-session.ps1",
+            "scripts/start-jarvis-terminal.ps1"
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error ("{0}: {1}" -f $file, $_.Message) }
+              exit 1
+            }
+          }
+
   android-build:
     runs-on: ubuntu-latest
     steps:
