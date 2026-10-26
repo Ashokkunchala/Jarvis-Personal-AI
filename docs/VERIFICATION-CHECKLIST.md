@@ -5,15 +5,16 @@ This checklist separates repository evidence from local/device acceptance. Keep 
 ## Current verification snapshot
 
 - [x] Main branch and repository structure inspected on 2026-10-26.
-- [x] Android debug APK job passed on main workflow run 40298136690.
-- [x] Root cause of the previous Python CI failure identified: pytest config enables coverage flags, but CI did not install `pytest-cov`.
-- [x] CI installation updated to install `requirements-dev.txt` plus `pytest-cov`; no package build is required for this repository's flat multi-package layout.
-- [ ] Latest Python tests and lint must pass in the current pull request workflow.
+- [x] Original main run 40298136690 built the Android debug APK successfully.
+- [x] CI test dependency mismatch fixed: development requirements now include pytest-asyncio and pytest-cov.
+- [x] Linux laptop-control unit tests now mock OS-specific volume, clipboard and system-status calls instead of depending on runner hardware.
+- [x] API security-header middleware is installed; automated API tests and the front-end voice-controls assertions passed in test job 121521090541 / workflow run 40307768473 (commit d284183).
+- [ ] Confirm full CI (Python, lint and Android build) on latest branch revision `a2bf5ee0d1d00b9bbc8a63b4d0bc5e6f48bce3e0`.
 - [ ] Install on a clean Windows machine; verify local setup, startup, stop, and recovery.
 - [ ] Verify Gemini calls with the owner's real key and check the account's current model/quota availability.
-- [ ] Install the debug APK on a physical Android 14 device; verify HTTPS chat, speech input/output, and token persistence after process restart.
+- [ ] Install the latest debug APK on a physical Android 14 device; verify HTTPS chat, speech input/output, and token persistence after process restart.
 - [ ] Complete threat-model and security review before public deployment.
-- [ ] Implement and verify a true end-to-end, low-latency full-duplex voice session. The current voice UI is transcript-first browser recognition plus local TTS; it is not full-duplex voice.
+- [ ] Implement and verify a true end-to-end, low-latency full-duplex voice session. The current browser flow is transcript-first browser recognition plus local TTS; it is not full-duplex voice.
 
 ## Required release gates
 
@@ -31,7 +32,7 @@ This checklist separates repository evidence from local/device acceptance. Keep 
 Windows PowerShell:
 
 ```powershell
-python -m pip install -r requirements-dev.txt pytest-cov
+python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
