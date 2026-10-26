@@ -4,7 +4,7 @@ Status meanings: **implemented** means code exists; **CI verified** means automa
 
 | Capability | Status | Details |
 |---|---|---|
-| Gemini chat backend | Implemented; live-key test pending | API key remains server-side; chat requires configured bearer token |
+| Gemini chat backend | Implemented with browser streaming and stop control; live-key test pending | API key remains server-side; JSON and SSE chat endpoints require configured bearer token |
 | Adaptive assistant personality | Implemented | Friendly, witty, calm, motivational and technical modes in system instructions |
 | Indian English / Telugu | Implemented; quality test pending | Auto, English, Telugu choices; actual speech voice depends on browser/OS |
 | Conversation context | Implemented | Up to 20 previous messages per request; not stored server-side |

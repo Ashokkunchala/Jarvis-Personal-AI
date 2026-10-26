@@ -6,7 +6,7 @@
 - [x] Bearer-token gate on personal-data endpoints; refuses to run these APIs without a configured token.
 - [ ] Run full test suite locally and verify GitHub Actions.
 - [x] Add UI for reviewing/editing/deleting memories, exporting personal data, and tracking reminders/workouts.
-- [ ] Add a notification worker with retries, deduplication, and visible delivery status.
+- [x] Add a notification worker with retries, deduplication, and visible delivery status (local toast call status; keep it running for delivery).
 
 ## Milestone 2 — Windows companion agent
 - Localhost-only agent, explicit allow-listed actions, bearer authentication, user confirmation for consequential actions, audit log, and a stop switch.

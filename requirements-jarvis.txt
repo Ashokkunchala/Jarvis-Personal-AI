@@ -1,0 +1,51 @@
+# Core voice
+openwakeword>=0.7.0
+webrtcvad>=2.0.10
+pyaudio>=0.2.14
+sounddevice>=0.4.7
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Realtime & WebSocket
+websockets>=12.0
+aiohttp>=3.10,<4.0
+
+# TTS/STT alternatives
+pvporcupine>=3.0.0  # optional wake word
+piper-tts>=1.2.0    # local TTS
+faster-whisper>=1.0.0  # local STT
+vosk>=0.3.45        # offline STT
+
+# System control (Windows)
+pyautogui>=0.9.54
+pygetwindow>=0.0.9
+pywinauto>=0.6.8
+psutil>=6.0.0
+pycaw>=20240210
+comtypes>=1.4.0
+winshell>=0.6
+pywin32>=306
+
+# Vision & context
+mss>=9.0.1
+opencv-python>=4.10.0
+pillow>=10.4.0
+pyperclip>=1.9.0
+
+# Memory & AI
+chromadb>=0.5.5
+sentence-transformers>=3.0.1
+faiss-cpu>=1.8.0
+langchain>=0.2.0
+langchain-google-genai>=1.0.0
+
+# UI/Overlay
+PyQt6>=6.7.0
+pyqtgraph>=0.13.7
+pystray>=0.19.5
+qasync>=0.27.1
+
+# Utils
+rich>=13.8.0
+typer>=0.12.0
+python-multipart>=0.0.9

@@ -14,7 +14,7 @@ Status labels describe code in the repository, not a claim that a feature has be
 - [x] GitHub Actions test workflow and initial test suite
 - [ ] Verify clean installation and automated tests on a real Windows machine
 - [ ] Verify live Gemini API call with the user's own key
-- [ ] Improve streaming responses, cancellation, and error UX
+- [x] Add streamed browser responses and a stop control; live-key/device verification remains pending
 
 ## Phase 2 — Voice and personal memory
 - Voice activity states, stop-speaking button, and improved language selection.

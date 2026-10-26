@@ -16,9 +16,9 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:1px solid
 <main>
 <section class="panel" aria-label="Chat with JARVIS">
 <div class="chat-head"><div><h2>Talk to JARVIS</h2><div class="tiny">Adaptive personality · Indian English + Telugu support</div></div><div class="controls"><label class="tiny" for="language">Reply language</label><select id="language"><option value="auto">Auto / code-switch</option><option value="en">English</option><option value="te">తెలుగు (Telugu)</option></select><button id="clear" title="Clear this conversation">Clear chat</button></div></div>
-<div class="messages" id="messages" aria-live="polite"><div class="welcome" id="welcome"><strong>Namaste! I'm JARVIS.</strong><br>We can talk about your day, learn something new, plan your goals, share jokes, or write an original song. Try the microphone if your browser supports voice input.<br><br><span class="tiny">I don't have device-control, web-browsing, or persistent cloud memory tools yet. This interface is the first working step.</span></div></div>
+<div class="messages" id="messages" aria-live="polite"><div class="welcome" id="welcome"><strong>Namaste! I'm JARVIS.</strong><br>We can talk about your day, learn something new, plan your goals, share jokes, or write an original song. Replies stream as they arrive. Try the microphone if your browser supports voice input.<br><br><span class="tiny">Your explicit memories, reminders, and workout logs stay in the local backend. Web research is user-triggered and returns source links.</span></div></div>
 <div class="status" id="status" role="status">Ready when you are.</div>
-<form class="composer" id="chatForm"><textarea id="message" placeholder="Tell me what's on your mind…" rows="2" maxlength="8000" required></textarea><div class="composer-actions"><button type="button" id="mic" title="Voice input">🎙 Speak</button><button type="submit" class="primary" id="send">Send ➤</button></div></form>
+<form class="composer" id="chatForm"><textarea id="message" placeholder="Tell me what's on your mind…" rows="2" maxlength="8000" required></textarea><div class="composer-actions"><button type="button" id="mic" title="Voice input">🎙 Speak</button><button type="button" id="stop" hidden>Stop</button><button type="submit" class="primary" id="send">Send ➤</button></div></form>
 </section>
 <aside class="side">
 <section class="panel"><h2>Personal settings</h2><label class="field"><span>What should I call you?</span><input id="nickname" maxlength="60" placeholder="Your preferred name"></label><label class="field"><span>Local API token (session only)</span><input id="deviceToken" type="password" autocomplete="off" placeholder="Paste your JARVIS_API_TOKEN"></label><p class="tiny">The token is kept only in this page session and is not saved to browser storage.</p><label class="check"><input id="speakReplies" type="checkbox"> <span>Speak replies aloud (uses your browser's speech voices).</span></label><label class="check"><input id="saveHistory" type="checkbox"> <span>Save chat history in this browser on this device. Off by default.</span></label><p class="tiny">The browser speech voice available may vary by device. The Gemini response is text; this is local browser text-to-speech, not Gemini audio.</p><button id="saveSettings" class="primary">Save settings</button></section>
@@ -30,7 +30,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:1px solid
 <section class="panel"><h2>AI workout coach</h2><form id="coachForm"><label class="field"><span>Goal</span><input id="coachGoal" maxlength="300" placeholder="Improve stamina" required></label><label class="field"><span>Fitness level</span><select id="coachLevel"><option>beginner</option><option>intermediate</option><option>advanced</option></select></label><label class="field"><span>Days per week</span><input id="coachDays" type="number" min="1" max="7" value="3"></label><label class="field"><span>Limitations or injuries</span><input id="coachLimits" maxlength="1000" placeholder="Optional"></label><button class="primary" type="submit">Create plan</button></form><p id="coachOutput" class="tiny"></p></section>
 <section class="panel"><h2>AI nutrition helper</h2><form id="nutritionForm"><label class="field"><span>Goal</span><input id="nutritionGoal" maxlength="300" placeholder="Balanced everyday meals" required></label><label class="field"><span>Food preferences</span><input id="nutritionPreferences" maxlength="500" placeholder="Vegetarian, Indian meals, etc."></label><label class="field"><span>Allergies</span><input id="nutritionAllergies" maxlength="500" placeholder="List allergies"></label><label class="field"><span>Budget or context</span><input id="nutritionBudget" maxlength="500" placeholder="Budget-friendly options"></label><button class="primary" type="submit">Suggest meals</button></form><p id="nutritionOutput" class="tiny"></p><p class="tiny">General information only, not medical nutrition treatment.</p></section>
 <section class="panel"><h2>My tasks</h2><p class="tiny">A simple local checklist for this browser. These are not cloud-synced reminders and won't notify you when this page is closed.</p><form class="task-row" id="taskForm"><input id="taskInput" maxlength="180" placeholder="Add a task…" required><button class="primary" type="submit">Add</button></form><ul class="tasks" id="tasks"></ul><button id="clearTasks">Clear completed</button></section>
-<section class="panel"><h2>Current capabilities</h2><p>✅ Gemini chat (after API setup)</p><p>✅ English / Telugu reply preference</p><p>✅ Conversation context for this session</p><p>✅ Optional local chat history</p><p>✅ Browser voice input and spoken replies (if supported)</p><p>🛠 Android app: starter with encrypted token storage; chat integration pending</p><p>🛠 Windows agent: limited confirmed URL opening only</p><p>🛠 Reminders: local storage and experimental Windows toast worker</p></section>
+<section class="panel"><h2>Current capabilities</h2><p>✅ Gemini chat with streaming and stop control (after API setup)</p><p>✅ English / Telugu reply preference</p><p>✅ Context sent per request; no server-side chat transcript</p><p>✅ Optional local chat history</p><p>✅ Browser voice input and spoken replies (if supported)</p><p>✅ Local explicit memories, reminders, workout logs, research, and coaching</p><p>🛠 Android: HTTPS chat, encrypted token, tap-to-speak and spoken replies</p><p>🛠 Windows agent: limited confirmed URL opening; reminder toast worker is experimental</p></section>
 <section class="panel"><h2>Privacy & safety</h2><p class="tiny">Keep the backend on your own computer while setting it up. Never put your Gemini API key into this page or commit it to GitHub. Don't enter passwords or sensitive personal information. Clear local data using your browser settings if needed.</p><button id="openDocs">Open API docs</button></section>
 </aside>
 </main>
@@ -44,6 +44,7 @@ let tasks = [];
 let deviceToken = "";
 let agentToken = "";
 let busy = false;
+let activeChat = null;
 const HISTORY_KEY = "jarvis.history.v1", SETTINGS_KEY = "jarvis.settings.v1", TASKS_KEY = "jarvis.tasks.v1";
 function setStatus(text, error=false){ statusEl.textContent=text; statusEl.className=error?"status error":"status"; }
 function addMessage(role, text){
@@ -51,7 +52,7 @@ function addMessage(role, text){
   const node=document.createElement("div"); node.className="message "+(role==="user"?"user":"assistant");
   const who=document.createElement("div"); who.className="who"; who.textContent=role==="user"?"You":"JARVIS";
   const body=document.createElement("div"); body.textContent=text;
-  node.append(who,body); messagesEl.append(node); messagesEl.scrollTop=messagesEl.scrollHeight;
+  node.append(who,body); messagesEl.append(node); messagesEl.scrollTop=messagesEl.scrollHeight; return body;
 }
 function renderHistory(){messagesEl.innerHTML=""; if(!history.length){const w=document.createElement("div");w.className="welcome";w.textContent="Conversation cleared. What's on your mind?";messagesEl.append(w);return;} history.forEach(m=>addMessage(m.role,m.content));}
 function saveHistory(){ if($("saveHistory").checked){try{localStorage.setItem(HISTORY_KEY,JSON.stringify(history.slice(-40)));}catch(e){setStatus("Could not save history in this browser.",true);}} else {localStorage.removeItem(HISTORY_KEY);} }
@@ -62,15 +63,24 @@ function speak(text){if(!$("speakReplies").checked||!("speechSynthesis" in windo
 async function sendMessage(text){
  text=text.trim(); if(!text||busy)return;
  const prior=history.slice(-20);
- addMessage("user",text); history.push({role:"user",content:text}); $("message").value=""; busy=true;$("send").disabled=true;$("mic").disabled=true;setStatus("Thinking…");
+ addMessage("user",text); history.push({role:"user",content:text}); $("message").value=""; busy=true;activeChat=new AbortController();$("send").disabled=true;$("mic").disabled=true;$("clear").disabled=true;$("stop").hidden=false;setStatus("Connecting to JARVIS…");
+ let streamedReply="";
  try{
-   const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json", ...(deviceToken ? {"Authorization":"Bearer "+deviceToken} : {})},body:JSON.stringify({message:text,language:language(),nickname:$("nickname").value.trim(),history:prior})});
-   const data=await res.json();
-   if(!res.ok)throw new Error(data.detail||"Request failed ("+res.status+").");
-   addMessage("model",data.reply);history.push({role:"model",content:data.reply});history=history.slice(-40);saveHistory();speak(data.reply);setStatus("Ready · "+data.model);
- }catch(e){history=history.filter((m,i)=>!(i===history.length-1&&m.role==="user"&&m.content===text));setStatus(e.message+" Check setup and server logs.",true);addMessage("model","I couldn't complete that request. "+e.message);}
- finally{busy=false;$("send").disabled=false;$("mic").disabled=false;$("message").focus();}
+   const res=await fetch("/api/chat/stream",{method:"POST",signal:activeChat.signal,headers:{"Content-Type":"application/json", ...(deviceToken ? {"Authorization":"Bearer "+deviceToken} : {})},body:JSON.stringify({message:text,language:language(),nickname:$("nickname").value.trim(),history:prior})});
+   if(!res.ok){const data=await res.json().catch(()=>({}));throw new Error(data.detail||"Request failed ("+res.status+").");}
+   if(!res.body)throw new Error("This browser cannot read a streamed response.");
+   const reader=res.body.getReader(), decoder=new TextDecoder();let buffer="",model="",replyBody=null,finished=false;
+   while(true){const {value,done}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});const events=buffer.split("\n\n");buffer=events.pop();
+    for(const event of events){const line=event.split("\n").find(row=>row.startsWith("data: "));if(!line)continue;const data=JSON.parse(line.slice(6));if(data.error)throw new Error(data.error);if(data.text){if(!replyBody)replyBody=addMessage("model","");streamedReply+=data.text;replyBody.textContent=streamedReply;messagesEl.scrollTop=messagesEl.scrollHeight;setStatus("JARVIS is responding…");}if(data.done){finished=true;model=data.model||"";}}
+    if(done)break;
+   }
+   if(buffer.trim()){const line=buffer.split("\n").find(row=>row.startsWith("data: "));if(line){const data=JSON.parse(line.slice(6));if(data.error)throw new Error(data.error);if(data.text){if(!replyBody)replyBody=addMessage("model","");streamedReply+=data.text;replyBody.textContent=streamedReply;}if(data.done){finished=true;model=data.model||"";}}}
+   if(!finished||!streamedReply)throw new Error("The AI stream ended before a complete reply arrived.");
+   history.push({role:"model",content:streamedReply});history=history.slice(-40);saveHistory();speak(streamedReply);setStatus("Ready · "+model);
+ }catch(e){if(e.name==="AbortError"){const last=history.at(-1);if(last?.role==="user"&&last.content===text)history.pop();if(streamedReply){history.push({role:"model",content:streamedReply});history=history.slice(-40);saveHistory();}setStatus(streamedReply?"Response stopped. Partial reply kept in this conversation.":"Response stopped.");}else{const last=history.at(-1);if(last?.role==="user"&&last.content===text)history.pop();setStatus(e.message+" Check setup and server logs.",true);addMessage("model","I couldn't complete that request. "+e.message);}}
+ finally{busy=false;activeChat=null;$("send").disabled=false;$("mic").disabled=false;$("clear").disabled=false;$("stop").hidden=true;$("message").focus();}
 }
+$("stop").addEventListener("click",()=>{if(activeChat)activeChat.abort();});
 $("chatForm").addEventListener("submit",e=>{e.preventDefault();sendMessage($("message").value);});
 $("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("chatForm").requestSubmit();}});
 $("clear").addEventListener("click",()=>{history=[];localStorage.removeItem(HISTORY_KEY);if("speechSynthesis"in window)window.speechSynthesis.cancel();renderHistory();setStatus("This conversation was cleared from the page and saved browser history.");});

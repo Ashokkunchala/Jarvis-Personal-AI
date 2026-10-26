@@ -1,5 +1,11 @@
 # Changelog
 
+# Unreleased
+- Added authenticated server-sent-event streaming for browser chat and a stop control; retained the JSON endpoint for native clients.
+- Updated the dashboard capability descriptions and API documentation to match shipped features.
+- Added persistent reminder notification deduplication, capped exponential retries, and terminal delivery status for the optional Windows worker.
+- Documented worker state-file behavior and its delivery-status limits.
+
 ## 0.2.0 — Browser MVP and setup improvements
 - Added a responsive JARVIS chat UI served by FastAPI.
 - Added browser speech recognition where supported and browser text-to-speech for responses.

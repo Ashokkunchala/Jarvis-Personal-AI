@@ -28,6 +28,9 @@
 ## Device actions
 
 - Use a local agent with an explicit allowlist, not arbitrary model-generated shell commands.
+- Terminal chat and the browser dashboard are chat clients; neither grants the model operating-system control. Laptop actions remain explicit local commands, and shutdown/restart require a typed confirmation in the CLI.
+- Android interaction requires the owner to connect and authorize the device through Android's USB debugging prompt. ADB does not bypass app permissions, lock screens, or Android security; keep USB debugging off when it is not needed and do not expose ADB over the network.
+- Do not send passwords, payment actions, or sensitive account actions through automated taps or text entry. Keep the device in view and confirm consequential changes on the phone itself.
 - Show the proposed action and effects before sensitive operations.
 - Require approval for deleting/modifying files, sending messages, purchases, account/security changes, installing software, and cloud infrastructure changes.
 - Keep an audit trail and provide an emergency stop / disconnect option.
