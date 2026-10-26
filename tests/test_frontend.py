@@ -1,8 +1,9 @@
+from html.parser import HTMLParser
+from pathlib import Path
+
 import shutil
 import subprocess
 import tempfile
-from html.parser import HTMLParser
-from pathlib import Path
 
 
 HTML_PATH = Path(__file__).parents[1] / "app" / "static" / "index.html"
