@@ -46,3 +46,18 @@ def test_inline_javascript_syntax_when_node_is_available():
             assert result.returncode == 0, result.stderr
         finally:
             Path(path).unlink(missing_ok=True)
+
+
+def test_voice_first_interface_has_explicit_privacy_and_cancel_controls():
+    html = HTML_PATH.read_text(encoding="utf-8")
+    for expected in (
+        'id="voiceStart"',
+        'id="voiceStop"',
+        'id="stopSpeech"',
+        'id="voiceOrb"',
+        'id="voiceTitle"',
+        "transcript ready",
+        "Tap Start voice to capture a message",
+        "Full-duplex real-time audio and background listening are not yet integrated",
+    ):
+        assert expected in html
