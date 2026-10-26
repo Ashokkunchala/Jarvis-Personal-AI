@@ -43,3 +43,13 @@ def test_live_voice_ticket_endpoint_requires_device_token(monkeypatch, tmp_path)
         payload = response.json()
         assert payload["expires_in"] == 60
         assert len(payload["ticket"]) >= 32
+
+
+def test_live_voice_ticket_expiry(monkeypatch):
+    import app.live_voice as live_voice
+
+    clock = {"now": 100.0}
+    monkeypatch.setattr(live_voice.time, "monotonic", lambda: clock["now"])
+    ticket = live_voice._issue_live_ticket()
+    clock["now"] += live_voice.LIVE_TICKET_TTL_SECONDS + 1
+    assert live_voice._consume_live_ticket(ticket) is False
