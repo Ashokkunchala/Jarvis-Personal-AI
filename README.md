@@ -1,6 +1,6 @@
 # JARVIS Personal AI
 
-A Gemini-powered personal assistant prototype for Indian English and Telugu. The intended personality is adaptive: friendly and witty for everyday chat, calm for serious topics, and energetic for coaching.
+A multi-provider personal assistant prototype for Indian English and Telugu, supporting Gemini, OpenRouter, and Groq for text chat. The intended personality is adaptive: friendly and witty for everyday chat, calm for serious topics, and energetic for coaching.
 
 > **Status: multi-component prototype, not a complete JARVIS yet.** This repository contains a local Gemini chat UI, authenticated SQLite APIs for explicit memories/reminders/workout logs, a first live web-search adapter, a restricted Windows helper, and a native Android starter screen. An earlier Android revision built successfully in GitHub Actions; the latest voice/language changes are awaiting their CI build and a physical-device end-to-end test. Public cloud deployment is not safe yet.
 
@@ -52,7 +52,7 @@ There are two independent terminal clients. The default one needs **only** `GEMI
 
 ### Backend and clients
 
-- FastAPI + Gemini chat backend with streamed browser replies and a stop control; the JSON chat endpoint remains available to native clients.
+- FastAPI chat backend with Gemini, OpenRouter, and Groq text providers; choose a preferred provider or use automatic fallback. Provider keys stay on the server. Real-time audio remains on Gemini Live.
 - Live authenticated terminal chat (`python jarvis_cli.py chat`) against the HTTP backend, plus a realtime full-screen Textual UI (`python jarvis_cli.py tui`) that talks to the local brain directly. Session context is held in process memory.
 - Adaptive personality instructions and English/Telugu response preference.
 - Browser speech input (only when manually activated and supported) and browser text-to-speech.
