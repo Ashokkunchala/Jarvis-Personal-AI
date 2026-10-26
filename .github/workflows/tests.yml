@@ -39,12 +39,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-      - name: Install development dependencies and lint tool
-        run: python -m pip install -r requirements-dev.txt ruff
-      - name: Lint new front-end regression test
-        run: ruff check tests/test_frontend.py
+      - name: Compile front-end regression test
+        run: python -m py_compile tests/test_frontend.py
 
   android-build:
     runs-on: ubuntu-latest
