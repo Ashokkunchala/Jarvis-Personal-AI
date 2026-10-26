@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.net.Uri
+import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
@@ -58,6 +60,9 @@ private fun SetupScreen() {
     var busy by remember { mutableStateOf(false) }
     var voiceBusy by remember { mutableStateOf(false) }
     var language by remember { mutableStateOf("auto") }
+    var reminderTitle by remember { mutableStateOf("") }
+    var reminderDueAt by remember { mutableStateOf("") }
+    var reminders by remember { mutableStateOf(listOf<String>()) }
 
     val speechLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -146,6 +151,75 @@ private fun SetupScreen() {
         ) { Text(if (busy) "Connecting…" else "Connect securely") }
 
         Button(onClick = { language = when (language) { "auto" -> "en"; "en" -> "te"; else -> "auto" } }) { Text("Reply language: $language (tap to change)") }
+        Text("Phone quick controls", style = MaterialTheme.typography.titleLarge)
+        Text("These open Android's own settings screens. JARVIS does not silently toggle protected settings.")
+        Button(onClick = { openSystemSettings(context, Settings.ACTION_SETTINGS, status = { status = it }) }) { Text("Open device settings") }
+        Button(onClick = { openSystemSettings(context, Settings.ACTION_WIFI_SETTINGS, status = { status = it }) }) { Text("Open Wi-Fi settings") }
+        Button(onClick = { openSystemSettings(context, Settings.ACTION_BLUETOOTH_SETTINGS, status = { status = it }) }) { Text("Open Bluetooth settings") }
+        Button(onClick = {
+            openSystemSettings(context, Settings.ACTION_APPLICATION_DETAILS_SETTINGS, status = { status = it },
+                uri = Uri.parse("package:" + context.packageName))
+        }) { Text("Open JARVIS app permissions") }
+
+        Text("Reminders & routines", style = MaterialTheme.typography.titleLarge)
+        Text("Use an ISO-8601 date/time with timezone, for example 2026-10-27T08:00:00+05:30.")
+        OutlinedTextField(
+            value = reminderTitle,
+            onValueChange = { reminderTitle = it },
+            label = { Text("Reminder title") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = reminderDueAt,
+            onValueChange = { reminderDueAt = it },
+            label = { Text("Due date/time with timezone") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        Button(enabled = !busy && reminderTitle.isNotBlank() && reminderDueAt.isNotBlank(), onClick = {
+            scope.launch {
+                busy = true
+                try {
+                    val base = endpoint.trim().trimEnd('/')
+                    val activeToken = TokenVault.read(context) ?: token
+                    require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before creating reminders." }
+                    val payload = JSONObject().put("title", reminderTitle.trim()).put("due_at", reminderDueAt.trim()).toString()
+                    val result = withContext(Dispatchers.IO) { request(base + "/api/reminders", payload, activeToken) }
+                    val parsed = JSONObject(result.second)
+                    if (result.first !in 200..299) throw IllegalStateException(parsed.optString("detail", "Reminder creation failed (${result.first})."))
+                    reminderTitle = ""
+                    status = "Reminder saved to your authenticated JARVIS backend."
+                } catch (error: Exception) {
+                    status = error.message ?: "Could not create reminder."
+                } finally { busy = false }
+            }
+        }) { Text("Create reminder") }
+        Button(enabled = !busy, onClick = {
+            scope.launch {
+                busy = true
+                try {
+                    val base = endpoint.trim().trimEnd('/')
+                    val activeToken = TokenVault.read(context) ?: token
+                    require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before loading reminders." }
+                    val result = withContext(Dispatchers.IO) { request(base + "/api/reminders", null, activeToken) }
+                    val parsed = JSONObject(result.second)
+                    if (result.first !in 200..299) throw IllegalStateException(parsed.optString("detail", "Could not load reminders (${result.first})."))
+                    val items = parsed.optJSONArray("items")
+                    reminders = (0 until (items?.length() ?: 0)).mapNotNull { i ->
+                        items?.optJSONObject(i)?.let { item ->
+                            val done = item.optInt("completed", 0) == 1
+                            "${if (done) "✓" else "○"} ${item.optString("title")} — ${item.optString("due_at")}"
+                        }
+                    }
+                    status = "Loaded ${reminders.size} reminder(s)."
+                } catch (error: Exception) {
+                    status = error.message ?: "Could not load reminders."
+                } finally { busy = false }
+            }
+        }) { Text("Refresh reminders") }
+        reminders.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+
         Text("Chat", style = MaterialTheme.typography.titleLarge)
         Text(reply)
         OutlinedTextField(
@@ -240,5 +314,24 @@ private fun request(url: String, body: String?, token: String?): Pair<Int, Strin
         return code to text
     } finally {
         connection.disconnect()
+    }
+}
+
+
+private fun openSystemSettings(
+    context: android.content.Context,
+    action: String,
+    status: (String) -> Unit,
+    uri: Uri? = null
+) {
+    try {
+        val intent = Intent(action).apply {
+            if (uri != null) data = uri
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        status("Opened Android settings. Review and confirm changes in the system screen.")
+    } catch (error: Exception) {
+        status("This Android settings screen is not available on this device.")
     }
 }
