@@ -11,6 +11,15 @@
 - [ ] Re-run Python tests, lint, and Android build after the CI update; retain the workflow URL as evidence.
 - [ ] Verify clean setup and local end-to-end behavior on Windows with the owner's API key.
 
+## Milestone 1B — real-time voice and interface (in progress)
+- [x] Add a browser Live Voice panel and PCM audio streaming client.
+- [x] Add an authenticated server-side WebSocket bridge; keep provider API credentials on the backend.
+- [x] Add same-origin and allow-listed-origin checks with regression tests.
+- [x] Make the Live API model and voice configurable (`GEMINI_LIVE_MODEL`, `GEMINI_LIVE_VOICE`).
+- [ ] Confirm the configured model is available to the owner's API project; exercise a real microphone-to-model-to-speaker session and interruption on Chrome/Android Chrome.
+- [ ] Improve audio worklet/queueing, reconnect/session expiry, live captions, and rate/budget guardrails.
+- [ ] Add native Android real-time bidirectional audio (not only tap-to-speak recognition and TTS), with explicit microphone session indicator and Stop control.
+
 ## Milestone 2 — Windows companion agent
 - Localhost-only agent, explicit allow-listed actions, bearer authentication, user confirmation for consequential actions, audit log, and a stop switch.
 - No arbitrary shell execution, password access, stealth, or background surveillance.
