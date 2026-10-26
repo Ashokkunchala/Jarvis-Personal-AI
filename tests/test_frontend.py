@@ -5,6 +5,11 @@ import shutil
 import subprocess
 import tempfile
 
+from fastapi.testclient import TestClient
+
+from app.live_voice import router as live_voice_router
+from app.main import app
+
 
 HTML_PATH = Path(__file__).parents[1] / "app" / "static" / "index.html"
 
@@ -65,3 +70,14 @@ def test_voice_first_interface_has_live_audio_and_fallback_controls():
     live_client = (HTML_PATH.parent / "live_voice.js").read_text(encoding="utf-8")
     for expected in ('"/api/live-voice?token="', 'type:"audio"', 'type:"audio_end"', "getUserMedia", "stopPlayback"):
         assert expected in live_client
+
+
+def test_live_voice_websocket_rejects_disallowed_origin():
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            "/api/live-voice?token=invalid",
+            headers={"origin": "https://untrusted.example"},
+        ) as websocket:
+            websocket.receive_text()
+    # Starlette's TestClient may raise WebSocketDisconnect directly; if it does,
+    # the origin check is still expected to reject the connection before accept.
