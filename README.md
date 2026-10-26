@@ -43,6 +43,7 @@ There are two independent terminal clients. The default one needs **only** `GEMI
 `jarvis_cli.py chat` is the **backend** client: it requires `JARVIS_API_TOKEN` and a running `jarvis_cli.py serve`, and streams from the authenticated HTTP API. Use it when you want the browser's memory/reminder/coaching context in the terminal. Both clients read `JARVIS_API_URL` if set and only send a token to HTTPS endpoints or localhost.
 
 - [Windows setup](docs/SETUP-WINDOWS.md)
+- [Installation and live terminal microphone guide](docs/INSTALLATION-AND-LIVE-TERMINAL.md)
 - [Features and known limitations](docs/FEATURES.md)
 - [Milestone plan](docs/NEXT-MILESTONES.md)
 - [Personal data APIs and AI coaching](docs/PERSONAL-DATA-API.md)
