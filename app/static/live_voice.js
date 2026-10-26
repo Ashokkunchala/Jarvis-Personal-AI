@@ -88,8 +88,16 @@
     const token=$("deviceToken")?.value?.trim()||"";
     if(token.length<32)throw new Error("Enter your JARVIS API token and click Save settings first.");
     if(socket&&socket.readyState===WebSocket.OPEN){await startCapture();return;}
+    // Keep the long-lived bearer token in an Authorization header. Only the
+    // short-lived, single-use ticket is placed in the WebSocket URL.
+    const ticketResponse=await fetch("/api/live-voice-ticket",{
+      method:"POST",headers:{Authorization:"Bearer "+token,Accept:"application/json"}
+    });
+    if(!ticketResponse.ok)throw new Error(ticketResponse.status===401?"Device token rejected. Save settings and reconnect.":"Could not authorize a live voice session (HTTP "+ticketResponse.status+").");
+    const ticketData=await ticketResponse.json();
+    if(typeof ticketData.ticket!=="string"||!ticketData.ticket)throw new Error("Server did not return a live voice ticket.");
     const scheme=location.protocol==="https:"?"wss:":"ws:";
-    socket=new WebSocket(scheme+"//"+location.host+"/api/live-voice?token="+encodeURIComponent(token));
+    socket=new WebSocket(scheme+"//"+location.host+"/api/live-voice?ticket="+encodeURIComponent(ticketData.ticket));
     socket.addEventListener("message",onMessage);
     socket.addEventListener("open",async()=>{try{await startCapture();}catch(e){status(e.message,true);releaseCapture(false);socket?.close(1000,"microphone unavailable");}});
     socket.addEventListener("error",()=>status("Live connection failed. Check API token, backend config and model access.",true));
