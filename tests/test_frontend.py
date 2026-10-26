@@ -73,3 +73,12 @@ def test_voice_first_interface_has_live_audio_and_fallback_controls():
         "stopPlayback",
     ):
         assert expected in live_client
+
+
+def test_external_live_voice_javascript_syntax_when_node_is_available():
+    node = shutil.which("node")
+    if not node:
+        return
+    script = HTML_PATH.parent / "live_voice.js"
+    result = subprocess.run([node, "--check", str(script)], text=True, capture_output=True, check=False)
+    assert result.returncode == 0, result.stderr
