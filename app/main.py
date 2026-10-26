@@ -11,6 +11,7 @@ from google import genai
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
+from app.ai_providers import configured_provider_order, openai_compatible_chat, openai_compatible_stream, provider_model
 from app.live_voice import router as live_voice_router
 from app.middleware.security import SecurityHeadersMiddleware
 from app.personal_data import get_memory_context, require_device_token, router as personal_data_router
@@ -72,13 +73,11 @@ def chat(request: ChatRequest, authorization: str | None = Header(default=None))
     if not hmac.compare_digest(supplied_token, expected_token):
         raise HTTPException(status_code=401, detail="Missing or invalid JARVIS device token.")
 
-    client = getattr(app.state, "gemini_client", None)
-    if client is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Gemini API is not configured. Copy .env.example to .env and set GEMINI_API_KEY.",
-        )
+    provider_order = configured_provider_order(settings)
+    if not provider_order:
+        raise HTTPException(status_code=503, detail="No AI provider configured. Set GEMINI_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY on the server.")
 
+    client = getattr(app.state, "gemini_client", None)
     contents = [
         {"role": item.role, "parts": [{"text": item.content}]}
         for item in request.history[-20:]
@@ -98,23 +97,39 @@ def chat(request: ChatRequest, authorization: str | None = Header(default=None))
         system_instruction = SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(request.language) + " " + name_instruction
         if memory_instruction:
             system_instruction += "\n\n" + memory_instruction
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=contents,
-            config={
-                "system_instruction": system_instruction,
-                "temperature": 0.8,
-            },
-        )
-        reply = (response.text or "").strip()
-        if not reply:
-            raise HTTPException(status_code=502, detail="The AI returned an empty response.")
-        return ChatResponse(reply=reply, model=settings.gemini_model, language=request.language)
+        openai_messages = [{"role": "system", "content": system_instruction}]
+        openai_messages.extend({"role": item.role, "content": item.content} for item in request.history[-20:])
+        openai_messages.append({"role": "user", "content": request.message})
+        failures = []
+        for provider in provider_order:
+            try:
+                if provider == "gemini":
+                    if client is None:
+                        raise RuntimeError("Gemini client is unavailable")
+                    response = client.models.generate_content(
+                        model=settings.gemini_model,
+                        contents=contents,
+                        config={"system_instruction": system_instruction, "temperature": 0.8},
+                    )
+                    reply = (response.text or "").strip()
+                    model = settings.gemini_model
+                else:
+                    model, reply = openai_compatible_chat(settings, provider, openai_messages, 0.8)
+                if not reply:
+                    raise RuntimeError("The AI returned an empty response")
+                if provider != provider_order[0]:
+                    logger.warning("AI provider fallback succeeded: %s", provider)
+                return ChatResponse(reply=reply, model=provider + "/" + model, language=request.language)
+            except Exception as error:
+                logger.warning("AI provider %s failed; trying next configured provider: %s", provider, type(error).__name__)
+                failures.append(provider)
+        logger.error("All configured AI providers failed: %s", ", ".join(failures))
+        raise HTTPException(status_code=502, detail="All configured AI providers failed. Check server-side provider configuration and logs.")
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Gemini request failed")
-        raise HTTPException(status_code=502, detail="The AI request failed. Check server logs and API configuration.")
+        logger.exception("AI request failed")
+        raise HTTPException(status_code=502, detail="The AI request failed. Check server logs and provider configuration.")
 
 
 @app.post("/api/chat/stream")
@@ -127,9 +142,10 @@ def chat_stream(request: ChatRequest, authorization: str | None = Header(default
     if not hmac.compare_digest(supplied_token, expected_token):
         raise HTTPException(status_code=401, detail="Missing or invalid JARVIS device token.")
 
+    provider_order = configured_provider_order(settings)
+    if not provider_order:
+        raise HTTPException(status_code=503, detail="No AI provider configured. Set GEMINI_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY on the server.")
     client = getattr(app.state, "gemini_client", None)
-    if client is None:
-        raise HTTPException(status_code=503, detail="Gemini API is not configured. Copy .env.example to .env and set GEMINI_API_KEY.")
 
     contents = [
         {"role": item.role, "parts": [{"text": item.content}]}
@@ -150,29 +166,47 @@ def chat_stream(request: ChatRequest, authorization: str | None = Header(default
         system_instruction += "\n\n" + memory_instruction
 
     def events():
-        stream = None
-        try:
-            stream = client.models.generate_content_stream(
-                model=settings.gemini_model,
-                contents=contents,
-                config={"system_instruction": system_instruction, "temperature": 0.8},
-            )
-            for chunk in stream:
-                text = getattr(chunk, "text", None)
-                if text:
-                    yield "data: " + json.dumps({"text": text}, ensure_ascii=False) + "\n\n"
-            yield "data: " + json.dumps({"done": True, "model": settings.gemini_model}) + "\n\n"
-        except Exception:
-            logger.exception("Gemini streaming request failed")
-            yield "data: " + json.dumps({"error": "The AI stream failed. Check server logs and API configuration."}) + "\n\n"
-        finally:
-            # Closing the provider iterator on disconnect gives the SDK a chance to release its HTTP stream.
-            close = getattr(stream, "close", None)
-            if close:
-                try:
-                    close()
-                except Exception:
-                    logger.debug("Provider stream cleanup failed", exc_info=True)
+        openai_messages = [{"role": "system", "content": system_instruction}]
+        openai_messages.extend({"role": item.role, "content": item.content} for item in request.history[-20:])
+        openai_messages.append({"role": "user", "content": request.message})
+        for provider in provider_order:
+            stream = None
+            emitted = False
+            try:
+                if provider == "gemini":
+                    if client is None:
+                        raise RuntimeError("Gemini client is unavailable")
+                    stream = client.models.generate_content_stream(
+                        model=settings.gemini_model,
+                        contents=contents,
+                        config={"system_instruction": system_instruction, "temperature": 0.8},
+                    )
+                    model = settings.gemini_model
+                    for chunk in stream:
+                        delta = getattr(chunk, "text", None)
+                        if delta:
+                            emitted = True
+                            yield "data: " + json.dumps({"text": delta}, ensure_ascii=False) + "\n\n"
+                else:
+                    model = provider_model(settings, provider)
+                    for delta in openai_compatible_stream(settings, provider, openai_messages, 0.8):
+                        emitted = True
+                        yield "data: " + json.dumps({"text": delta}, ensure_ascii=False) + "\n\n"
+                yield "data: " + json.dumps({"done": True, "model": provider + "/" + model}) + "\n\n"
+                return
+            except Exception:
+                logger.exception("AI streaming provider %s failed", provider)
+                if emitted:
+                    yield "data: " + json.dumps({"error": "The AI stream failed after output began; retry the request."}) + "\n\n"
+                    return
+            finally:
+                close = getattr(stream, "close", None)
+                if close:
+                    try:
+                        close()
+                    except Exception:
+                        logger.debug("Provider stream cleanup failed", exc_info=True)
+        yield "data: " + json.dumps({"error": "All configured AI providers failed. Check server logs and configuration."}) + "\n\n"
 
     return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
