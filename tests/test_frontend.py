@@ -64,7 +64,9 @@ def test_voice_first_interface_has_live_audio_and_fallback_controls():
         assert expected in html
     live_client = (HTML_PATH.parent / "live_voice.js").read_text(encoding="utf-8")
     for expected in (
-        '"/api/live-voice?token="',
+        '"/api/live-voice?ticket="',
+        '"/api/live-voice-ticket"',
+        'Authorization:"Bearer "+token',
         'type:"audio"',
         'type:"audio_end"',
         "getUserMedia",
