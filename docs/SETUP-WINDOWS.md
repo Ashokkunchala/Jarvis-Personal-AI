@@ -1,5 +1,19 @@
 # Windows Setup — Step by Step
 
+## Recommended: one-file installer
+
+Download [INSTALL-JARVIS.ps1](../INSTALL-JARVIS.ps1) and run it from PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\\INSTALL-JARVIS.ps1
+```
+
+It installs the current branch under `%LOCALAPPDATA%\\Programs\\JarvisPersonalAI`, creates a private virtual environment and `.env`, and configures JARVIS to start the backend, browser UI, and terminal at Windows sign-in. The server stays bound to `127.0.0.1`. To stop auto-start, disable the **JARVIS Personal AI** task in Task Scheduler.
+
+At first use, enter the `JARVIS_API_TOKEN` from the installed `.env` into the browser UI. The optional **Remember device token on this browser** setting stores it in local storage and is less secure than session-only entry. Start Live Voice and grant microphone access explicitly; Windows and browser privacy controls are not bypassed.
+
+
 This guide starts the JARVIS web interface and Gemini chat locally. It does **not** install an Android app or enable device control.
 
 ## 1. Create a Gemini API key
