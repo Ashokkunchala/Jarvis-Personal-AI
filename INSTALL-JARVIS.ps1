@@ -26,39 +26,70 @@ function Set-EnvValue {
 try {
     $pythonExe = $null
 
-    if (Get-Command py -ErrorAction SilentlyContinue) {
-        $candidate = & py -3.11 -c "import sys; print(sys.executable)" 2>$null
-        if ($LASTEXITCODE -eq 0 -and $candidate) {
-            $pythonExe = ($candidate | Select-Object -First 1).Trim()
+    # Probe the Python launcher without allowing its "no runtime" stderr to abort PowerShell.
+    $pyCommand = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyCommand) {
+        try {
+            $candidate = (& $pyCommand.Source -3 -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1)
+            if ($LASTEXITCODE -eq 0 -and $candidate) {
+                $versionText = (& $pyCommand.Source -3 -c "import sys; print(sys.version_info >= (3,11))" 2>$null | Select-Object -First 1)
+                if ($LASTEXITCODE -eq 0 -and $versionText -eq "True") {
+                    $pythonExe = $candidate.Trim()
+                }
+            }
+        } catch {
+            $pythonExe = $null
         }
     }
 
-    if (-not $pythonExe -and (Get-Command python -ErrorAction SilentlyContinue)) {
-        $candidate = & python -c "import sys; print(sys.executable)" 2>$null
-        $version = & python -c "import sys; print(sys.version_info >= (3,11))" 2>$null
-        if ($LASTEXITCODE -eq 0 -and $candidate -and ($version | Select-Object -First 1).Trim() -eq "True") {
-            $pythonExe = ($candidate | Select-Object -First 1).Trim()
+    # Check a python.exe already on PATH, again treating launch errors as a failed probe.
+    if (-not $pythonExe) {
+        $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+        if ($pythonCommand) {
+            try {
+                $candidate = (& $pythonCommand.Source -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1)
+                $versionText = (& $pythonCommand.Source -c "import sys; print(sys.version_info >= (3,11))" 2>$null | Select-Object -First 1)
+                if ($LASTEXITCODE -eq 0 -and $candidate -and $versionText -eq "True") {
+                    $pythonExe = $candidate.Trim()
+                }
+            } catch {
+                $pythonExe = $null
+            }
         }
     }
 
     if (-not $pythonExe) {
-        if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-            throw "Python 3.11+ is required. Install it from https://www.python.org/downloads/windows/ and rerun this installer."
+        $wingetCommand = Get-Command winget -ErrorAction SilentlyContinue
+        if (-not $wingetCommand) {
+            throw "Python 3.11+ is required and winget is unavailable. Install Python from https://www.python.org/downloads/windows/ and rerun this installer."
         }
 
-        Write-Host "Installing Python 3.12 for this Windows user..." -ForegroundColor Yellow
-        & winget install --id Python.Python.3.12 -e --scope user --silent --accept-package-agreements --accept-source-agreements
+        Write-Host "No Python 3.11+ runtime was found. Installing Python 3.12 for this Windows user..." -ForegroundColor Yellow
+        & $wingetCommand.Source install --id Python.Python.3.12 -e --scope user --silent --accept-package-agreements --accept-source-agreements
         if ($LASTEXITCODE -ne 0) {
-            throw "Python installation did not finish. Install Python 3.11+ and rerun this installer."
+            throw "Automatic Python installation failed. Install Python 3.11+ from https://www.python.org/downloads/windows/ and rerun this installer."
         }
 
+        # Prefer the common per-user install path, then re-probe the launcher in case its path differs.
         $pythonExe = @(
             (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"),
             (Join-Path $env:LOCALAPPDATA "Programs\Python\Python311\python.exe")
         ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
         if (-not $pythonExe) {
-            throw "Python was installed but is not visible yet. Close this window and rerun INSTALL-JARVIS.ps1."
+            $pyCommand = Get-Command py -ErrorAction SilentlyContinue
+            if ($pyCommand) {
+                try {
+                    $candidate = (& $pyCommand.Source -3.12 -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1)
+                    if ($LASTEXITCODE -eq 0 -and $candidate) { $pythonExe = $candidate.Trim() }
+                } catch {
+                    $pythonExe = $null
+                }
+            }
+        }
+
+        if (-not $pythonExe) {
+            throw "Python installation completed but its executable could not be located. Close PowerShell, reopen it, and rerun INSTALL-JARVIS.ps1."
         }
     }
 
