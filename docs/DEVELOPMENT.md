@@ -2,7 +2,7 @@
 
 ## Prerequisites
 - Python 3.11+
-- Gemini API key from Google AI Studio (optional for tests; required for live chat)
+- At least one AI provider key for live chat: Gemini, OpenRouter, or Groq (mocked provider tests do not call external APIs)
 
 ## Local setup
 PowerShell:
@@ -12,7 +12,8 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
-# Edit .env and add your own GEMINI_API_KEY
+# Add one or more server-side keys: GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY
+# Set JARVIS_AI_PROVIDER=auto, gemini, openrouter, or groq
 uvicorn app.main:app --reload
 ```
 
@@ -23,7 +24,7 @@ Use `http://127.0.0.1:8000/docs` to explore the API. Never share a live API key 
 pytest -q
 ```
 
-The initial tests do not call Gemini. Add mocked SDK tests before expanding the API.
+Tests should not call live providers. Chat and streaming select the configured provider and can fall back to other configured providers if a request fails before streaming output begins. Live voice remains Gemini Live API based.
 
 ## Change checklist
 1. Describe the intended behavior and threat model.
