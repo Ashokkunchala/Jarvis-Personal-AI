@@ -36,7 +36,7 @@ Create the environment if it does not exist:
 if (-not (Test-Path .venv\Scripts\python.exe)) {
     py -3 -m venv .venv
 }
-`.venv\Scripts\python.exe` -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
 ```
 
 If `py -3` cannot find a suitable runtime, install a current stable Python release from https://www.python.org/downloads/windows/ (or use the official Windows package manager), reopen PowerShell, and repeat the version check. Ensure the selected Python is 3.11+.
