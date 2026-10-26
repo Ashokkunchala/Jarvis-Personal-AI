@@ -5,6 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+    gemini_live_model: str = "gemini-3.8-live"
+    gemini_live_voice: str = "Aoede"
     host: str = "127.0.0.1"
     port: int = 8000
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
