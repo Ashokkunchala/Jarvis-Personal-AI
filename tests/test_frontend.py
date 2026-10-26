@@ -49,16 +49,19 @@ def test_inline_javascript_syntax_when_node_is_available():
             Path(path).unlink(missing_ok=True)
 
 
-def test_voice_first_interface_has_explicit_privacy_and_cancel_controls():
+def test_voice_first_interface_has_live_audio_and_fallback_controls():
     html = HTML_PATH.read_text(encoding="utf-8")
     for expected in (
-        'id="voiceStart"',
-        'id="voiceStop"',
-        'id="stopSpeech"',
+        'id="liveVoiceConnect"',
+        'id="liveVoiceStop"',
+        'id="liveVoiceInterrupt"',
+        'id="liveVoiceStatus"',
+        'id="liveVoiceTranscript"',
+        'src="/static/live_voice.js"',
         'id="voiceOrb"',
-        'id="voiceTitle"',
-        "transcript ready",
-        "Tap Start voice to capture a message",
-        "Full-duplex real-time audio and background listening are not yet integrated",
+        "Keep this backend private",
     ):
         assert expected in html
+    live_client = (HTML_PATH.parent / "live_voice.js").read_text(encoding="utf-8")
+    for expected in ('"/api/live-voice?token="', 'type:"audio"', 'type:"audio_end"', "getUserMedia", "stopPlayback"):
+        assert expected in live_client
