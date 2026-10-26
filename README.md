@@ -4,6 +4,21 @@ A multi-provider personal assistant prototype for Indian English and Telugu, sup
 
 > **Status: multi-component prototype, not a complete JARVIS yet.** This repository contains a local Gemini chat UI, authenticated SQLite APIs for explicit memories/reminders/workout logs, a first live web-search adapter, a restricted Windows helper, and a native Android starter screen. An earlier Android revision built successfully in GitHub Actions; the latest voice/language changes are awaiting their CI build and a physical-device end-to-end test. Public cloud deployment is not safe yet.
 
+## One-file Windows installer
+
+Download [INSTALL-JARVIS.ps1](INSTALL-JARVIS.ps1) from this branch, open PowerShell in its download folder, and run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\INSTALL-JARVIS.ps1
+```
+
+The installer downloads this branch, installs Python (using winget if needed), installs dependencies, asks for your Gemini key (OpenRouter/Groq are optional), creates local secrets, and registers a Windows sign-in task. After sign-in it starts the local backend, opens the browser UI, and opens the terminal assistant. It does not run as administrator or expose the server beyond localhost.
+
+In the browser, enter your generated `JARVIS_API_TOKEN` from the installed `.env` file once. If you choose **Remember device token on this browser**, it is stored in browser local storage for convenience; this is less secure than session-only entry. Then click **Start Live Voice** and grant microphone permission. Voice is not silently activated on boot; the explicit start control is intentional.
+
+**Android is a separate APK**, not installable by the Windows script. Get the debug APK from the successful [Android build artifact](https://github.com/Ashokkunchala/Jarvis-Personal-AI/actions). Install it on Android and configure your private HTTPS backend. Android 14 restricts starting microphone foreground services from boot, so the phone app cannot safely promise automatic always-listening voice after reboot; launch the app and start voice explicitly.
+
 ## Start here
 
 ### Terminal clients
