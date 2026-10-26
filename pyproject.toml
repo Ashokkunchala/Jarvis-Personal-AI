@@ -33,7 +33,8 @@ dependencies = [
     "pyperclip>=1.8,<2.0",
     "pillow>=10.0,<12.0",
     "pyautogui>=0.9.54,<1.0",
-    "keyboard>=0.13.5,<1.0",\n    "SpeechRecognition[audio]>=3.10,<4.0",
+    "keyboard>=0.13.5,<1.0",
+    "SpeechRecognition[audio]>=3.10,<4.0",
 ]
 
 [project.optional-dependencies]
