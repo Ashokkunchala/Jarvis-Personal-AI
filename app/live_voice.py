@@ -24,6 +24,7 @@ import base64
 import binascii
 import json
 import logging
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from google import genai
@@ -43,6 +44,16 @@ MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 VOICE = "Aoede"
 
 
+def _origin_is_allowed(origin: str | None, host: str | None, allowed_origins: set[str]) -> bool:
+    """Allow configured origins and the exact same-origin app served by this backend."""
+    if not origin:
+        return True  # Native clients still require the device token below.
+    if origin in allowed_origins:
+        return True
+    parsed = urlsplit(origin)
+    return parsed.scheme in {"http", "https"} and bool(host) and parsed.netloc == host
+
+
 async def _send(websocket: WebSocket, payload: dict) -> bool:
     if websocket.client_state != WebSocketState.CONNECTED:
         return False
@@ -59,9 +70,10 @@ async def live_voice(websocket: WebSocket):
     settings = get_settings()
     expected_origins = set(settings.allowed_origins)
     origin = websocket.headers.get("origin")
-    # Reject cross-origin browser access. Clients without Origin must be trusted
-    # native clients; they still need the bearer token.
-    if origin and origin not in expected_origins:
+    # The UI is served by this same backend in the default deployment, so its
+    # own origin (e.g. http://127.0.0.1:8000) must work even when CORS lists
+    # only a separate development frontend. Other origins must be explicitly allowed.
+    if not _origin_is_allowed(origin, websocket.headers.get("host"), expected_origins):
         await websocket.close(code=4403, reason="origin not allowed")
         return
 
