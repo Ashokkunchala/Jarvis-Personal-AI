@@ -7,7 +7,7 @@ The native Kotlin + Jetpack Compose app currently supports:
 - Explicit microphone permission request and tap-to-speak speech recognition (the transcript is shown for review before sending).
 - Spoken assistant replies using Android's installed text-to-speech voice.
 - Language selection cycling through adaptive/auto, Indian English, and Telugu.
-- Quick shortcuts to Android device, Wi-Fi, Bluetooth, and JARVIS app-permission settings; the app opens system screens and does not bypass OS confirmation.
+- Quick shortcuts to Android device, Wi-Fi, Bluetooth, and JARVIS app-permission settings; supported voice transcripts can be reviewed and explicitly confirmed before opening a system screen.
 - Authenticated reminder creation and reminder-list refresh through the backend.
 - Cleartext HTTP disabled; there is no always-on microphone.
 
