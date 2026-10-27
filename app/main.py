@@ -1,6 +1,8 @@
 import hmac
 import json
 import logging
+import platform
+import psutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -57,6 +59,11 @@ app.add_middleware(SecurityHeadersMiddleware)
 @app.get("/", include_in_schema=False)
 def home():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard():
+    return FileResponse(STATIC_DIR / "dashboard.html")
 
 
 @app.get("/health")
@@ -227,6 +234,41 @@ class NutritionCoachRequest(BaseModel):
     dietary_preferences: str = Field(default="", max_length=500)
     allergies: str = Field(default="", max_length=500)
     budget_notes: str = Field(default="", max_length=500)
+
+
+
+@app.get("/api/performance")
+def performance(_=Depends(require_device_token)) -> dict:
+    """Return a minimal authenticated snapshot of host performance for the local dashboard."""
+    vm = psutil.virtual_memory()
+    try:
+        disk = psutil.disk_usage(str(Path.home().anchor or "/"))
+        disk_free_gb = round(disk.free / (1024 ** 3), 1)
+        disk_percent = float(disk.percent)
+    except (OSError, ValueError):
+        disk_free_gb = None
+        disk_percent = None
+    try:
+        battery = psutil.sensors_battery()
+    except (AttributeError, OSError):
+        battery = None
+    try:
+        process_memory_mb = round(psutil.Process().memory_info().rss / (1024 ** 2), 1)
+    except (psutil.Error, OSError):
+        process_memory_mb = None
+    return {
+        "cpu_percent": psutil.cpu_percent(interval=0.1),
+        "memory_percent": float(vm.percent),
+        "memory_used_gb": round(vm.used / (1024 ** 3), 1),
+        "memory_total_gb": round(vm.total / (1024 ** 3), 1),
+        "disk_percent": disk_percent,
+        "disk_free_gb": disk_free_gb,
+        "battery_percent": round(battery.percent) if battery else None,
+        "battery_plugged": bool(battery.power_plugged) if battery else None,
+        "platform": platform.platform(),
+        "cpu_count": psutil.cpu_count(logical=True),
+        "process_memory_mb": process_memory_mb,
+    }
 
 
 @app.post("/api/coach/workout")
