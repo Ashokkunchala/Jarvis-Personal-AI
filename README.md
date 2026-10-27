@@ -45,6 +45,7 @@ There are two independent terminal clients. The default one needs **only** `GEMI
 - [Windows setup](docs/SETUP-WINDOWS.md)
 - [Installation and live terminal microphone guide](docs/INSTALLATION-AND-LIVE-TERMINAL.md)
 - [Features and known limitations](docs/FEATURES.md)
+- [JARVIS Command Center dashboard](app/static/dashboard.html) — responsive live performance dashboard
 - [Milestone plan](docs/NEXT-MILESTONES.md)
 - [Personal data APIs and AI coaching](docs/PERSONAL-DATA-API.md)
 - [Live web research](docs/WEB-RESEARCH.md)
@@ -117,7 +118,7 @@ Keep `HOST=127.0.0.1`. Save `.env`, then start:
 .\scripts\start-windows.ps1
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Open the responsive [JARVIS Command Center dashboard](http://127.0.0.1:8000/dashboard) for live authenticated CPU/RAM/disk/battery telemetry and charts (enter your local device token). API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
 The local assistant (TUI, `ask`, laptop/android control) works without starting the backend — only `GEMINI_API_KEY` is required:
 
