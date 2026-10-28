@@ -81,6 +81,39 @@ Never use random or fabricated metrics, pretend-connected providers, fake agent 
 30. Workout, nutrition and wellness organization using user-provided or authorized data; do not present it as a substitute for professional care.
 31. Budget, expense, shopping, travel and personal goal organization with approval before consequential transactions.
 
+### Browser, search and research
+37. Search the public web for user questions and return concise answers with source URLs, publication dates where available, and uncertainty notes.
+38. Search YouTube for videos/channels and open the selected result visibly in the user's browser; distinguish searching results from actually playing a video.
+39. Use browser automation only through a controlled, observable browser session. Show the current domain and actions; handle login/2FA by asking the user to take over rather than bypassing access controls.
+40. Never state a page was opened, a video played, or a search completed unless the browser/tool result confirms it.
+
+### Local computer operator
+41. Open, focus, minimize, maximize and close supported Windows applications; launch URLs in a visible default browser window.
+42. Search, read, create, edit, copy, move, rename, organize and delete user-authorized local files and folders. Preview source/destination and estimate affected items before bulk operations.
+43. Type user-requested content directly into the focused app/editor when keyboard automation is available. Preserve line breaks and verify success where possible; do not default to telling the user to copy/paste.
+44. For deletion, overwriting, bulk file changes, app uninstall, registry/system changes, or other destructive operations: show exact targets and obtain explicit confirmation. Prefer recycle-bin/trash over permanent deletion.
+45. Install, update and uninstall applications using official package managers/installers where practical. Show package/source, scope and impact first; require approval for installs/uninstalls, administrator elevation and license/cost implications. Never silently disable security controls.
+46. Provide visible notifications/warnings for failures, permission issues, security risks, battery/resource thresholds and task completion; support dismiss, snooze and notification preferences.
+47. Check actual foreground-window focus and automation availability before typing. Never claim text was typed if the target window or keyboard action failed.
+
+### Connected accounts and communications
+48. Support Gmail, Google Calendar, Drive, Docs, Sheets, YouTube and other Google services through official OAuth/API scopes or user-authorized connectors. Request least-privilege scopes and show which account is connected.
+49. For Gmail: search/list/read with granted scopes, draft replies, and compose messages. Sending, forwarding, deleting, sharing files, changing permissions or modifying calendar events requires a clear user request and confirmation at the point of impact.
+50. For WhatsApp and other messaging apps: open the desktop/web app and prepare a draft in the intended conversation where supported. Sending a message, sharing an attachment or contacting a person requires explicit user authorization; never bypass login, QR pairing or platform protections.
+51. Keep account tokens encrypted and out of logs; provide disconnect/revoke controls, account selection, and an audit history. If an official API does not support an action, explain the limitation instead of pretending it worked.
+
+### Media and conversation
+52. Find and play a requested song/video through a user-selected or authorized service, using visible controls and the service's own playback. Report when playback is blocked by login, subscription, region or autoplay settings.
+53. Support original singing, humming or generated music when the configured model/service supports it; do not reproduce non-user-provided copyrighted song lyrics or imitate a living artist's voice. For existing songs, open/play through a legitimate service rather than copying protected audio.
+54. Hold natural conversations, brainstorm ideas, compare options, offer constructive opinions and reflect on user-shared experiences. Clearly distinguish personal-assistant reasoning from actual lived experience or verified facts; JARVIS must not invent real personal memories or experiences.
+55. Learn preferences only through transparent, user-controlled memory: explain what may be saved, allow review/edit/export/delete, and never covertly collect sensitive information.
+
+### Self-development and debugging
+56. Diagnose JARVIS and user-approved projects by inspecting logs, reproducing errors, identifying likely causes, writing fixes and adding regression tests.
+57. For code changes, show a plan and diff, run relevant tests, summarize results, and work on a non-production branch. Ask before pushing changes, merging, releasing, deploying or modifying production systems.
+58. Self-improvement means measured evaluation, proposing changes, testing in isolation and asking for approval—not uncontrolled self-modification, disabling safeguards, or silently changing permissions.
+59. Offer proactive ideas and improvement opportunities grounded in observed evidence; label hypotheses, estimated savings and uncertain recommendations clearly.
+
 ### Security, observability and reliability
 32. Authentication, least privilege, secure secret handling, encrypted communication and input validation.
 33. Approval gates, audit logs, timeouts, cancellation, emergency stop and safe failure behavior.
@@ -96,8 +129,10 @@ Phase 3 — Complete voice pipeline and optional wake-word feature.
 Phase 4 — Connect the holographic dashboard to actual telemetry and runtime events.
 Phase 5 — Complete persistent memory, reminders and routines.
 Phase 6 — Integrate agent orchestration, browser research, coding and DevOps tools.
-Phase 7 — Complete Android experience, secure pairing and permitted sync.
-Phase 8 — Hardening, acceptance testing, documentation and deployment readiness.
+Phase 7 — Stabilize desktop app/file/typing automation with verified focus and approval-gated destructive actions.
+Phase 8 — Add OAuth-based Google integrations and supported messaging workflows with least-privilege scopes and send/share confirmations.
+Phase 9 — Add media search/playback, notifications, and transparent memory-based personal assistance.
+Phase 10 — Complete Android experience, secure pairing, permitted sync, hardening and acceptance testing.
 
 Adjust the order if dependency inspection justifies it. Maintain a working app after each phase.
 
