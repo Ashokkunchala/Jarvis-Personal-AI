@@ -58,6 +58,9 @@ Replace `replace_me` with your real key:
 
 ```dotenv
 GEMINI_API_KEY=your_real_key_here
+OPENROUTER_API_KEY=your_real_key_here
+GROQ_API_KEY=your_real_key_here
+JARVIS_AI_PROVIDER=auto
 GEMINI_MODEL=gemini-2.5-flash
 HOST=127.0.0.1
 PORT=8000

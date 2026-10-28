@@ -48,6 +48,13 @@ class StubBrain:
         self.registry = StubRegistry()
         self.history: list[dict[str, Any]] = []
 
+    @property
+    def active_model(self) -> str:
+        return self.model
+
+    def provider_candidates(self) -> list[str]:
+        return ["gemini"]
+
     def snapshot(self) -> dict[str, Any]:
         return {
             "model": self.model,

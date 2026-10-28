@@ -23,7 +23,7 @@ In the browser, enter your generated `JARVIS_API_TOKEN` from the installed `.env
 
 ### Terminal clients
 
-There are two independent terminal clients. The default one needs **only** `GEMINI_API_KEY` — it drives the same local tool-calling brain the browser uses, with no backend process.
+There are two independent terminal clients. The default one needs **any one** of `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `GROQ_API_KEY` — it drives the same local tool-calling brain the browser uses, with no backend process, and automatically falls back through every configured provider (`JARVIS_AI_PROVIDER` controls the order, default `auto`).
 
 ```powershell
 # Realtime full-screen UI: streaming text, live tool log, confirmation dialogs.
@@ -106,7 +106,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 notepad .env
 ```
 
-In the local `.env`, set `GEMINI_API_KEY` to your real key and replace the example `JARVIS_API_TOKEN` with a random secret generated using:
+In the local `.env`, set at least one AI provider key (`GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `GROQ_API_KEY` — optionally set `JARVIS_AI_PROVIDER` to `gemini`, `openrouter`, `groq` or `auto` to pick the order) and replace the example `JARVIS_API_TOKEN` with a random secret generated using:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -120,7 +120,7 @@ Keep `HOST=127.0.0.1`. Save `.env`, then start:
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Open the responsive [JARVIS Command Center dashboard](http://127.0.0.1:8000/dashboard) for live authenticated CPU/RAM/disk/battery telemetry and charts (enter your local device token). API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
-The local assistant (TUI, `ask`, laptop/android control) works without starting the backend — only `GEMINI_API_KEY` is required:
+The local assistant (TUI, `ask`, laptop/android control) works without starting the backend — only one provider key (`GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `GROQ_API_KEY`) is required:
 
 ```powershell
 .\.venv\Scripts\python.exe jarvis_cli.py tui      # realtime streaming terminal UI

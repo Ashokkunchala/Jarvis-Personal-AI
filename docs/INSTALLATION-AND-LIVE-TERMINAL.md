@@ -57,7 +57,7 @@ This installs the project in editable mode and its Windows extras, including its
 
 If installation reports a TOML parsing error, first confirm that `git pull origin improve/security-quality-gates` succeeded and that `pyproject.toml` does not contain a literal `\n` inside a dependency line. Then retry the installation command. Do not manually paste escaped newline characters into TOML.
 
-## 4. Configure the Gemini key
+## 4. Configure an AI provider key
 
 Check whether the local environment file exists:
 
@@ -66,7 +66,7 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 notepad .env
 ```
 
-Set `GEMINI_API_KEY` to your own key from https://aistudio.google.com/. Keep real credentials in the local `.env` only; do not commit the file. For the direct terminal assistant, `GEMINI_API_KEY` is the essential setting.
+Set at least one provider key: `GEMINI_API_KEY` from https://aistudio.google.com/, `OPENROUTER_API_KEY` from https://openrouter.ai/keys, or `GROQ_API_KEY` from https://console.groq.com/keys. Optionally set `JARVIS_AI_PROVIDER` to `gemini`, `openrouter`, `groq` or `auto` (default) to control the failover order. Keep real credentials in the local `.env` only; do not commit the file. Any single configured key is enough for the direct terminal assistant.
 
 ## 5. Launch the realtime terminal
 
@@ -106,7 +106,7 @@ Automated tests do not prove the microphone works on your specific laptop. Verif
 
 - **TOMLDecodeError:** update the branch and retry; verify dependency lines in `pyproject.toml` are ordinary separate lines, not literal escaped newline text.
 - **Python runtime not found:** run `py -0p` to list installed runtimes, install Python 3.11+, and recreate `.venv` only if it was created with an unavailable interpreter. Back up any local work before recreating the environment.
-- **No Gemini response:** check `GEMINI_API_KEY`, network access, model availability, account quota and provider status. Never share the key in logs.
+- **No AI response:** check that at least one of `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY` is set, plus network access, model availability, account quota and provider status. The chat and health routes report which providers are configured. Never share keys in logs.
 - **No speech recognized:** use a quiet environment, check the default microphone, speak clearly in English, and check internet access for transcription.
 - **Permission or device error:** verify Windows microphone privacy settings and that no other application exclusively owns the device.
 

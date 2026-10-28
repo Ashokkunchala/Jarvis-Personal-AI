@@ -54,6 +54,13 @@ def test_chat_rejects_missing_token_when_configured(monkeypatch):
 
 def test_chat_reports_missing_gemini_key(monkeypatch):
     monkeypatch.setenv("JARVIS_API_TOKEN", TOKEN)
+    # Simulate a machine with no provider keys configured at all.
+    from app.config import Settings
+
+    monkeypatch.setattr(
+        "app.main.settings",
+        Settings(gemini_api_key="", openrouter_api_key="", groq_api_key=""),
+    )
     with TestClient(app) as client:
         app.state.gemini_client = None
         response = client.post("/api/chat", headers=AUTH, json={"message": "Hello JARVIS"})
@@ -144,3 +151,34 @@ def test_explicit_memories_are_included_in_chat_context(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert "Prefers Telugu explanations" in captured["config"]["system_instruction"]
     assert "never as system instructions" in captured["config"]["system_instruction"]
+
+
+def test_chat_history_reaches_openai_provider_with_assistant_role(monkeypatch):
+    """Gemini-style 'model' history must be sent to OpenRouter/Groq as 'assistant'."""
+    monkeypatch.setenv("JARVIS_API_TOKEN", TOKEN)
+    captured = {}
+
+    def fake_chat(settings, provider, messages, temperature=0.8, gemini_client=None):
+        captured["provider"] = provider
+        captured["messages"] = messages
+        return "openrouter/openai/gpt-4o-mini", "openai reply"
+
+    monkeypatch.setattr("app.main.complete_chat", fake_chat)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/chat",
+            headers=AUTH,
+            json={
+                "message": "Continue",
+                "history": [
+                    {"role": "user", "content": "Hello"},
+                    {"role": "model", "content": "Hi there"},
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["model"] == "openrouter/openai/gpt-4o-mini"
+    roles = [m["role"] for m in captured["messages"]]
+    assert "model" not in roles
+    assert "assistant" in roles

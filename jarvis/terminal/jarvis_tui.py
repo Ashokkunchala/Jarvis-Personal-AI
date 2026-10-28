@@ -1,6 +1,6 @@
 """JARVIS terminal UI — realtime streaming chat with live tool execution.
 
-Talks straight to the local Gemini tool loop (no server required), renders
+Talks straight to the local multi-provider tool loop (no server required), renders
 replies as they stream, shows every tool call as it happens, and asks for
 confirmation before anything risky runs.
 """
@@ -284,11 +284,13 @@ class JarvisTUI(App):
         self.set_interval(2.0, self.refresh_status)
         self.refresh_status()
 
-        self._sys("JARVIS online — direct Gemini tool loop, no server required.")
+        self._sys("JARVIS online — direct AI tool loop (Gemini/OpenRouter/Groq), no server required.")
         if not self.brain.configured:
-            self._sys("[red]GEMINI_API_KEY missing.[/red] Set it in .env (see .env.example), then restart.")
+            self._sys("[red]No AI provider key.[/red] Set GEMINI_API_KEY, OPENROUTER_API_KEY, or "
+                      "GROQ_API_KEY in .env (see .env.example), then restart.")
         else:
-            self._sys(f"model [magenta]{self.brain.model}[/magenta] · "
+            providers = ", ".join(self.brain.provider_candidates())
+            self._sys(f"providers [magenta]{providers}[/magenta] · model [magenta]{self.brain.active_model}[/magenta] · "
                       f"[cyan]{len(self.brain.registry)} tools[/cyan] · type /tools to inspect")
         self._sys("Ask anything, or try: “set volume to 20”, “open chrome and screenshot”, “battery status”.")
 
@@ -298,7 +300,8 @@ class JarvisTUI(App):
             return
         bar = self.query_one("#status-bar", StatusBar)
         data: dict[str, Any] = dict(getattr(bar, "data", {}) or {})
-        data["model"] = self.brain.model
+        data["model"] = self.brain.active_model
+        data["providers"] = ", ".join(self.brain.provider_candidates())
         data["tools"] = len(self.brain.registry)
         data["state"] = "THINKING" if self.busy else ("READY" if self.brain.configured else "ERROR")
         if self.turn_started:

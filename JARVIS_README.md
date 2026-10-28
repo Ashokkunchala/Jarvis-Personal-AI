@@ -88,6 +88,9 @@ python jarvis_cli.py status
 Edit .env file:
 `env
 GEMINI_API_KEY=your_key_here
+OPENROUTER_API_KEY=your_key_here
+GROQ_API_KEY=your_key_here
+JARVIS_AI_PROVIDER=auto
 USE_GEMINI_LIVE=true
 WAKEWORD_ENABLED=true
 SYSTEM_CONTROL_ENABLED=true

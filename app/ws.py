@@ -97,7 +97,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(default="")):
 
     await _emit(websocket, {
         "type": "ready",
-        "model": brain.model,
+        "model": brain.active_model,
+        "providers": brain.provider_candidates(),
         "tools": len(brain.registry),
         "configured": brain.configured,
     })
