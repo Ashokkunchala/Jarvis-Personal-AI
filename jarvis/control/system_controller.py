@@ -7,6 +7,7 @@ from ctypes import POINTER, cast
 from typing import Any
 
 import psutil
+import pyautogui
 from comtypes import CLSCTX_ALL
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
@@ -15,7 +16,7 @@ logger = logging.getLogger("jarvis.control")
 
 class SystemController:
     def __init__(self):
-        self.pyautogui.FAILSAFE = False
+        pyautogui.FAILSAFE = False
         self._setup_audio()
 
     def _setup_audio(self):

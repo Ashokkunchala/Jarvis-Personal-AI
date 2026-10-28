@@ -137,37 +137,41 @@ async def live_voice(websocket: WebSocket):
 
             async def pump_provider():
                 try:
-                    async for response in session.receive():
-                        server_content = getattr(response, "server_content", None)
-                        if not server_content:
-                            continue
-                        input_tx = getattr(server_content, "input_transcription", None)
-                        if input_tx and getattr(input_tx, "text", None):
-                            await _send(websocket, {"type": "transcript", "source": "user", "text": input_tx.text})
-                        output_tx = getattr(server_content, "output_transcription", None)
-                        if output_tx and getattr(output_tx, "text", None):
-                            await _send(websocket, {"type": "transcript", "source": "assistant", "text": output_tx.text})
-                        model_turn = getattr(server_content, "model_turn", None)
-                        if model_turn:
-                            for part in getattr(model_turn, "parts", []) or []:
-                                inline = getattr(part, "inline_data", None)
-                                data = getattr(inline, "data", None) if inline else None
-                                if data:
-                                    encoded = data if isinstance(data, str) else base64.b64encode(data).decode("ascii")
-                                    await _send(websocket, {"type": "audio", "data": encoded})
-                                text_part = getattr(part, "text", None)
-                                if text_part:
-                                    await _send(websocket, {"type": "text", "text": text_part})
-                        if getattr(server_content, "interrupted", False):
-                            await _send(websocket, {"type": "interrupted"})
-                        if getattr(server_content, "turn_complete", False):
-                            await _send(websocket, {"type": "turn_complete"})
-                    await _send(websocket, {"type": "closed"})
+                    # session.receive() ends its generator after every
+                    # turn_complete; re-enter it so later turns keep flowing.
+                    while True:
+                        async for response in session.receive():
+                            server_content = getattr(response, "server_content", None)
+                            if not server_content:
+                                continue
+                            input_tx = getattr(server_content, "input_transcription", None)
+                            if input_tx and getattr(input_tx, "text", None):
+                                await _send(websocket, {"type": "transcript", "source": "user", "text": input_tx.text})
+                            output_tx = getattr(server_content, "output_transcription", None)
+                            if output_tx and getattr(output_tx, "text", None):
+                                await _send(websocket, {"type": "transcript", "source": "assistant", "text": output_tx.text})
+                            model_turn = getattr(server_content, "model_turn", None)
+                            if model_turn:
+                                for part in getattr(model_turn, "parts", []) or []:
+                                    inline = getattr(part, "inline_data", None)
+                                    data = getattr(inline, "data", None) if inline else None
+                                    if data:
+                                        encoded = data if isinstance(data, str) else base64.b64encode(data).decode("ascii")
+                                        await _send(websocket, {"type": "audio", "data": encoded})
+                                    text_part = getattr(part, "text", None)
+                                    if text_part:
+                                        await _send(websocket, {"type": "text", "text": text_part})
+                            if getattr(server_content, "interrupted", False):
+                                await _send(websocket, {"type": "interrupted"})
+                            if getattr(server_content, "turn_complete", False):
+                                await _send(websocket, {"type": "turn_complete"})
                 except asyncio.CancelledError:
                     raise
                 except Exception:
                     logger.exception("Gemini Live receive loop failed")
                     await _send(websocket, {"type": "error", "message": "Live voice connection ended. Reconnect and retry."})
+                finally:
+                    await _send(websocket, {"type": "closed"})
 
             receive_task = asyncio.create_task(pump_provider())
             while True:
