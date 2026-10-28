@@ -42,6 +42,7 @@ There are two independent terminal clients. The default one needs **any one** of
 
 `jarvis_cli.py chat` is the **backend** client: it requires `JARVIS_API_TOKEN` and a running `jarvis_cli.py serve`, and streams from the authenticated HTTP API. Use it when you want the browser's memory/reminder/coaching context in the terminal. Both clients read `JARVIS_API_URL` if set and only send a token to HTTPS endpoints or localhost.
 
+- [Master Codex implementation brief](docs/CODEX-IMPLEMENTATION-PROMPT.md) — product vision, roadmap, repository rules, testing, and delivery requirements
 - [Windows setup](docs/SETUP-WINDOWS.md)
 - [Installation and live terminal microphone guide](docs/INSTALLATION-AND-LIVE-TERMINAL.md)
 - [Features and known limitations](docs/FEATURES.md)
