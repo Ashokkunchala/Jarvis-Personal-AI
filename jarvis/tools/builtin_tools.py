@@ -8,6 +8,7 @@ tool actually runs.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from jarvis.tools.registry import Risk, Tool, ToolRegistry
@@ -34,6 +35,33 @@ def get_android():
 
         _android = AndroidController()
     return _android
+
+
+def _open_app_and_type(app_name: str, text: str, wait_seconds: float = 1.5) -> dict[str, Any]:
+    """Launch/focus an app and type text into its active window; never submits it."""
+    if not text:
+        return {"success": False, "error": "No text supplied; nothing was typed."}
+    launch_result = get_laptop().open_app(app_name)
+    if not isinstance(launch_result, dict) or not launch_result.get("success", False):
+        return {"success": False, "stage": "launch", "result": launch_result}
+    # Give Windows time to create and focus the new application window.
+    time.sleep(max(0.5, min(float(wait_seconds), 5.0)))
+    type_result = get_laptop().type_text(text)
+    if not isinstance(type_result, dict) or not type_result.get("success", False):
+        return {
+            "success": False,
+            "stage": "type",
+            "launched": launch_result,
+            "result": type_result,
+            "error": "Application launched, but typing failed. Check input automation permissions and focus the editor manually.",
+        }
+    return {
+        "success": True,
+        "launched": launch_result,
+        "typed_chars": type_result.get("typed_chars", len(text)),
+        "submitted": False,
+        "message": f"Typed {type_result.get('typed_chars', len(text))} characters into {app_name}; nothing was sent or submitted.",
+    }
 
 
 def reset_controllers() -> None:
@@ -190,6 +218,24 @@ def _register_apps(r: ToolRegistry) -> None:
             ["app_name"],
         ),
         handler=lambda app_name: get_laptop().open_app(app_name),
+        risk=Risk.LOW, category="apps",
+    ))
+    r.register(Tool(
+        name="open_website",
+        description="Open a website visibly in the user's default browser. Use for requests such as 'open YouTube', 'open Google', or a supplied URL. Do not merely say it is opening; call this tool and report its actual result.",
+        parameters=_obj({"url": _str("Website domain or HTTP(S) URL, e.g. 'youtube.com' or 'https://web.whatsapp.com'.")}, ["url"]),
+        handler=lambda url: get_laptop().open_app(url if url.startswith(("http://", "https://")) else "https://" + url),
+        risk=Risk.LOW, category="apps",
+    ))
+    r.register(Tool(
+        name="open_app_and_type",
+        description="Open a desktop application and type supplied text into its focused window. Use when the user asks you to write/create text directly in Notepad, an editor, or another app. This only types; it never presses Enter to send, submit, or execute the text.",
+        parameters=_obj({
+            "app_name": _str("Target application, e.g. 'notepad', 'whatsapp', 'code'."),
+            "text": _str("Exact text to type into the application."),
+            "wait_seconds": _num("Seconds to wait for the application window before typing (0.5 to 5; default 1.5)."),
+        }, ["app_name", "text"]),
+        handler=lambda app_name, text, wait_seconds=1.5: _open_app_and_type(app_name, text, wait_seconds),
         risk=Risk.LOW, category="apps",
     ))
     r.register(Tool(
