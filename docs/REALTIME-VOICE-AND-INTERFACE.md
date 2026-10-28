@@ -4,6 +4,7 @@
 
 - Browser dashboard with responsive JARVIS orb, ready/listening/thinking/speaking states, text chat, transcript view, and explicit live voice start/stop/interruption controls.
 - Browser Live Voice client that requests microphone access after a user click, down-samples audio to 16 kHz PCM16, streams frames to the backend, and plays returned 24 kHz PCM audio.
+- Default Live Voice profile uses Gemini's `Charon` prebuilt voice for a composed, lower-register assistant style. Override with `GEMINI_LIVE_VOICE` in `.env` if your enabled model supports another prebuilt voice. This is an original JARVIS-inspired voice profile, not a copy of a film actor's exact voice.
 - FastAPI WebSocket route at `/api/live-voice`. It authenticates the configured bearer token, checks browser Origin against configured CORS origins, keeps the Gemini API key on the server, validates payload sizes, opens a Gemini Live session, forwards audio/text/transcripts, and closes the session on disconnect.
 - Typed chat remains available as a fallback. Voice-session model tool calls are not permitted to execute device actions.
 
@@ -50,6 +51,6 @@ Windows PowerShell:
 .\scripts\start-windows.ps1
 ```
 
-Open `http://127.0.0.1:8000`, paste the same token configured on the backend, and click **Save settings**. Tap **Start Live Voice** only after confirming the Gemini Live model is enabled for your API account. If the Live session cannot connect, the typed/Dictate path remains the fallback.
+Open `http://127.0.0.1:8000`, paste the same token configured on the backend, and click **Save settings**. The default server voice is `Charon` (`GEMINI_LIVE_VOICE=Charon` in `.env`); restart the backend after changing it. Tap **Start Live Voice** only after confirming the Gemini Live model is enabled for your API account. If the Live session cannot connect, the typed/Dictate path remains the fallback.
 
 Keep the backend local/private. Do not use a public tunnel until the security acceptance checklist is complete.
