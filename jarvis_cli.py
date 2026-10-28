@@ -65,7 +65,7 @@ def _brief(value: Any, limit: int = 160) -> str:
 def _emit(result: Any, success: str, extra: str = "") -> None:
     if _ok(result):
         tail = f" [dim]{_brief(extra, 90)}[/dim]" if extra else ""
-        console.print(f"[green]✔[/green] {success}{tail}")
+        console.print(f"[green]ok[/green] {success}{tail}")
         return
     _fail(result)
 
@@ -141,13 +141,18 @@ def ask(
     if model:
         brain.model = model
     if not brain.configured:
-        err_console.print("[red]GEMINI_API_KEY missing[/red] — set GEMINI_API_KEY in .env")
+        err_console.print(
+            "[red]No AI provider configured[/red] — set GEMINI_API_KEY, OPENROUTER_API_KEY, "
+            "or GROQ_API_KEY in .env"
+        )
         raise typer.Exit(code=1)
 
     interactive = not message
+    providers = ", ".join(brain.provider_candidates())
     console.print(
         Panel.fit(
-            f"[bold cyan]JARVIS[/bold cyan] · model [magenta]{brain.model}[/magenta] · "
+            f"[bold cyan]JARVIS[/bold cyan] · providers [magenta]{providers}[/magenta] · "
+            f"model [magenta]{brain.active_model}[/magenta] · "
             f"[cyan]{len(brain.registry)}[/cyan] tools",
             border_style="cyan",
         )
@@ -179,9 +184,6 @@ def ask(
         except KeyboardInterrupt:
             console.print("\n[yellow]stopped[/yellow]")
             continue
-        answer = "".join(buffer)
-        if answer and history:
-            _persist_history(brain, prompt, answer)
         if not interactive:
             break
 
@@ -198,21 +200,15 @@ async def _stream_reply(brain, prompt: str, buffer: list[str]) -> None:
                 console.print(f"[dim]{event['message']}[/dim]")
         elif kind == "tool_start":
             args = _brief(event.get("args") or {}, 60)
-            console.print(f"  [cyan]→ {event['tool']}[/cyan] [dim]{args}[/dim]")
+            console.print(f"  [cyan]-> {event['tool']}[/cyan] [dim]{args}[/dim]")
         elif kind == "tool_end":
             mark = "green" if event.get("ok") else "red"
-            console.print(f"  [{mark}]✔ {event['tool']}[/{mark}] [dim]{_brief(event.get('summary', ''), 70)}[/dim]")
+            console.print(f"  [{mark}]ok {event['tool']}[/{mark}] [dim]{_brief(event.get('summary', ''), 70)}[/dim]")
         elif kind == "tool_cancelled":
-            console.print(f"  [yellow]⊘ {event['tool']}[/yellow] [dim]cancelled[/dim]")
+            console.print(f"  [yellow]x {event['tool']}[/yellow] [dim]cancelled[/dim]")
         elif kind == "error":
             console.print(f"\n[red]error:[/red] {event['error']}")
     console.print()
-
-
-def _persist_history(brain, prompt: str, answer: str) -> None:
-    brain.history.append({"role": "user", "parts": [{"text": prompt}]})
-    brain.history.append({"role": "model", "parts": [{"text": answer}]})
-    brain.history = brain.history[-40:]
 
 
 @app.command()
@@ -270,9 +266,10 @@ def status():
     table.add_column("Detail")
 
     table.add_row(
-        "Gemini brain",
+        "AI brain",
         "[green]ready[/green]" if brain.configured else "[red]no key[/red]",
-        f"{brain.model} · {len(brain.registry)} tools",
+        f"{', '.join(brain.provider_candidates()) or 'none'} · {brain.active_model} · "
+        f"{len(brain.registry)} tools",
     )
 
     from jarvis.tools.builtin_tools import get_android, get_laptop
@@ -406,24 +403,94 @@ def chat(message: str = typer.Argument(None, help="Optional first message; omit 
 
 @app.command()
 def start():
-    """Start JARVIS in real-time voice mode."""
+    """Start JARVIS in real-time voice mode ('Hey JARVIS' + Gemini Live + tools)."""
+    from jarvis.config.settings import config
 
-    console.print(Panel.fit("[bold cyan]JARVIS[/bold cyan] Starting Real-Time Mode...", border_style="cyan"))
+    if not config.gemini_api_key.strip():
+        err_console.print(
+            "[red]GEMINI_API_KEY is not set[/red] — add it to .env, then run 'jarvis start' again."
+        )
+        raise typer.Exit(code=1)
+
+    console.print(
+        Panel.fit(
+            "[bold cyan]JARVIS[/bold cyan] realtime voice\n"
+            f"model [magenta]{config.gemini_live_model}[/magenta] · "
+            f"voice [magenta]{config.gemini_live_voice}[/magenta] · "
+            f"wake word [magenta]hey jarvis[/magenta] · "
+            f"idle timeout [magenta]{config.awake_timeout_seconds:g}s[/magenta]\n"
+            "[dim]Ctrl+C shuts JARVIS down[/dim]",
+            border_style="cyan",
+        )
+    )
     asyncio.run(start_realtime())
 
 
+def _voice_event_printer(kind: str, payload: dict) -> None:
+    """Render realtime voice events in the terminal."""
+    if kind == "ready":
+        tools = payload.get("tools", 0)
+        console.print(
+            f"[green]ok[/green] microphone online · "
+            f"[cyan]{tools}[/cyan] voice tools · say [bold]'Hey JARVIS'[/bold] to talk"
+        )
+    elif kind == "live_ready":
+        console.print(f"[green]ok[/green] Gemini Live session open ([dim]{payload.get('model')}[/dim])")
+    elif kind == "wake":
+        console.print("[bold yellow]*[/bold yellow] [bold]JARVIS is awake[/bold] — go ahead")
+    elif kind == "transcript":
+        if payload.get("source") == "user":
+            console.print(f"[bold green]You ›[/bold green] {payload.get('text', '')}")
+        else:
+            console.print(f"[bold cyan]JARVIS ›[/bold cyan] {payload.get('text', '')}")
+    elif kind == "text":
+        console.print(f"[bold cyan]JARVIS ›[/bold cyan] {payload.get('text', '')}")
+    elif kind == "tool":
+        result = payload.get("result") or {}
+        mark = "green" if result.get("success") else "red"
+        summary = result.get("message") or result.get("error") or ""
+        console.print(
+            f"  [{mark}]-> {payload.get('name')}[/{mark}] "
+            f"[dim]{_brief(payload.get('args') or {}, 60)} · {_brief(str(summary), 70)}[/dim]"
+        )
+    elif kind == "interrupted":
+        console.print("  [dim]interrupted (barge-in)[/dim]")
+    elif kind == "turn_complete":
+        console.print("[dim]—[/dim]")
+    elif kind == "sleep":
+        console.print("[dim]back to sleep — say 'Hey JARVIS'[/dim]")
+    elif kind == "error":
+        console.print(f"[red]![/red] {payload.get('message', 'voice error')}")
+
+
 async def start_realtime():
+    import logging
+
     from jarvis.core.jarvis_unified import JarvisUnified
 
-    jarvis = JarvisUnified()
-    await jarvis.initialize()
-    console.print("[green]✔[/green] All systems online")
-    console.print("[yellow]Say 'Hey JARVIS' to activate[/yellow]")
+    for name in ("jarvis", "jarvis.agent", "jarvis.wakeword", "jarvis.gemini_live"):
+        logging.getLogger(name).setLevel(logging.INFO)
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(name)s %(levelname)s %(message)s",
+            datefmt="%H:%M:%S",
+        )
+
+    jarvis = JarvisUnified(on_event=_voice_event_printer)
+    try:
+        await jarvis.initialize()
+    except Exception as exc:
+        err_console.print(f"[red]Startup failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print("[green]ok[/green] All systems online")
     try:
         await jarvis.start_realtime()
     except KeyboardInterrupt:
+        pass
+    finally:
         await jarvis.stop()
-        console.print("\n[red]JARVIS shut down[/red]")
+    console.print("\n[red]JARVIS shut down[/red]")
 
 
 # ---------------------------------------------------------------------------
@@ -496,7 +563,7 @@ def laptop_screenshot(path: str | None = typer.Argument(None)):
     """Capture the screen to a PNG."""
     result = _lazy_laptop().screenshot(path)
     if _ok(result):
-        console.print(f"[green]✔[/green] screenshot saved: {result.get('file')}")
+        console.print(f"[green]ok[/green] screenshot saved: {result.get('file')}")
     else:
         _fail(result)
 
@@ -600,7 +667,7 @@ def android_setup():
     console.print("[cyan]Provisioning Android bridge…[/cyan]")
     result = asyncio.run(_lazy_android().setup())
     if _ok(result):
-        console.print(f"[green]✔[/green] {result.get('summary', 'setup complete')}")
+        console.print(f"[green]ok[/green] {result.get('summary', 'setup complete')}")
         for step in result.get("steps", []):
             console.print(f"  [dim]{step}[/dim]")
     else:
@@ -634,7 +701,7 @@ def android_screenshot(path: str = typer.Argument("android.png")):
     """Capture the phone screen."""
     result = _lazy_android().screenshot(path)
     if _ok(result):
-        console.print(f"[green]✔[/green] saved {result.get('file', path)}")
+        console.print(f"[green]ok[/green] saved {result.get('file', path)}")
     else:
         _fail(result)
 
@@ -650,7 +717,7 @@ def android_swipe(
     x1: int, y1: int, x2: int, y2: int, duration: int = typer.Option(300, help="Swipe duration in ms.")
 ):
     """Swipe between two screen coordinates."""
-    _emit(_lazy_android().swipe(x1, y1, x2, y2, duration), f"swiped ({x1},{y1}) → ({x2},{y2})")
+    _emit(_lazy_android().swipe(x1, y1, x2, y2, duration), f"swiped ({x1},{y1}) -> ({x2},{y2})")
 
 
 @android_app.command("type")
@@ -672,7 +739,7 @@ def android_sms(number: str, body: str):
         raise typer.Exit()
     result = _lazy_android().send_sms(number, message=body)
     if _ok(result):
-        console.print("[green]✔[/green] sms handed to the messaging app")
+        console.print("[green]ok[/green] sms handed to the messaging app")
         if result.get("note"):
             console.print(f"[dim]{result['note']}[/dim]")
     else:
@@ -686,7 +753,7 @@ def android_notifications(panel: bool = typer.Option(False, "--panel", help="Ope
     result = ctrl.open_notifications() if panel else ctrl.recent_notifications()
     if _ok(result):
         if panel:
-            console.print("[green]✔[/green] notification shade opened")
+            console.print("[green]ok[/green] notification shade opened")
         else:
             notes = result.get("notifications") or result.get("items") or []
             if not notes:
@@ -707,13 +774,13 @@ def android_install(apk_path: str):
 @android_app.command("pull")
 def android_pull(remote: str, local: str):
     """Copy a file off the phone."""
-    _emit(_lazy_android().pull_file(remote, local), f"pulled {remote} → {local}")
+    _emit(_lazy_android().pull_file(remote, local), f"pulled {remote} -> {local}")
 
 
 @android_app.command("push")
 def android_push(local: str, remote: str):
     """Copy a file onto the phone."""
-    _emit(_lazy_android().push_file(local, remote), f"pushed {local} → {remote}")
+    _emit(_lazy_android().push_file(local, remote), f"pushed {local} -> {remote}")
 
 
 if __name__ == "__main__":

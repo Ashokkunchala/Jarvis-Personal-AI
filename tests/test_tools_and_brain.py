@@ -106,7 +106,6 @@ def test_approved_confirmation_runs_tool(registry: ToolRegistry) -> None:
 
 
 def test_auto_approve_skips_prompt_for_safe_tool(registry: ToolRegistry) -> None:
-    from jarvis.control import info
 
     async def boom(tool, args) -> bool:  # pragma: no cover - must not run
         raise AssertionError("SAFE tools should not prompt")
@@ -171,7 +170,6 @@ def test_event_stream_reports_tool_lifecycle(registry: ToolRegistry) -> None:
 
 
 def test_laptop_status_shape(registry: ToolRegistry) -> None:
-    from jarvis.control import info
 
     original = registry.get("system_status")
     assert original is not None
@@ -266,3 +264,109 @@ def test_brain_marks_transient_errors_and_falls_back() -> None:
     _mark_good("gemini-good-model")
     assert "gemini-test-model" in _model_cooldown
     assert "gemini-good-model" not in _model_cooldown
+
+
+def test_brain_provider_candidates_order(monkeypatch) -> None:
+    from jarvis.core.brain import JarvisBrain
+
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk-key")
+    monkeypatch.setenv("JARVIS_AI_PROVIDER", "auto")
+    brain = JarvisBrain(api_key="gem-key")
+    assert brain.provider_candidates() == ["gemini", "openrouter", "groq"]
+    assert brain.configured is True
+    assert brain.active_model == brain.model
+
+    monkeypatch.setenv("JARVIS_AI_PROVIDER", "groq")
+    brain2 = JarvisBrain(api_key="")
+    assert brain2.provider_candidates() == ["groq", "gemini", "openrouter"]
+    assert brain2.active_model == "llama-3.3-70b-versatile"
+
+
+def test_brain_configured_without_any_key_is_false(monkeypatch) -> None:
+    from jarvis.core import brain as brain_module
+    from jarvis.core.brain import JarvisBrain
+
+    # Stop .env from re-injecting keys after we clear them.
+    monkeypatch.setattr(brain_module, "load_env", lambda: None)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    brain = JarvisBrain(api_key="")
+    assert brain.provider_candidates() == []
+    assert brain.configured is False
+
+
+def test_brain_openai_history_maps_roles(monkeypatch) -> None:
+    from jarvis.core.brain import JarvisBrain
+
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+    brain = JarvisBrain(
+        api_key="gem-key",
+        history=[
+            {"role": "user", "parts": [{"text": "hello"}]},
+            {"role": "model", "parts": [{"text": "hi there"}]},
+        ],
+    )
+    messages = brain._openai_history("sys prompt", "next")
+    assert messages[0] == {"role": "system", "content": "sys prompt"}
+    assert messages[1] == {"role": "user", "content": "hello"}
+    assert messages[2] == {"role": "assistant", "content": "hi there"}
+    assert messages[3] == {"role": "user", "content": "next"}
+
+
+def test_brain_ask_without_providers_yields_error(monkeypatch) -> None:
+    import asyncio
+
+    from jarvis.core import brain as brain_module
+    from jarvis.core.brain import JarvisBrain
+
+    monkeypatch.setattr(brain_module, "load_env", lambda: None)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    brain = JarvisBrain(api_key="")
+
+    async def collect():
+        return [event async for event in brain.ask("hi")]
+
+    events = asyncio.run(collect())
+    assert events[0]["type"] == "error"
+    assert "No AI provider configured" in events[0]["error"]
+
+
+def test_brain_ask_falls_back_to_next_provider_before_output(monkeypatch) -> None:
+    import asyncio
+
+    from jarvis.core.brain import JarvisBrain
+
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk-key")
+    monkeypatch.setenv("JARVIS_AI_PROVIDER", "gemini")
+    brain = JarvisBrain(api_key="gem-key")
+
+    async def broken_gemini(*args, **kwargs):
+        raise RuntimeError("503 UNAVAILABLE")
+        yield  # pragma: no cover - make it an async generator
+
+    async def fake_openai(provider, *args, **kwargs):
+        yield {"type": "status", "message": "thinking"}
+        yield {"type": "text_delta", "text": "fallback text"}
+        brain._persist_turn("hi", "fallback text")
+        yield {"type": "done", "text": "fallback text", "turns": 1, "tools_used": [], "elapsed": 0.1}
+
+    monkeypatch.setattr(brain, "_ask_gemini", broken_gemini)
+    monkeypatch.setattr(brain, "_ask_openai", fake_openai)
+
+    async def collect():
+        return [event async for event in brain.ask("hi")]
+
+    events = asyncio.run(collect())
+    kinds = [e["type"] for e in events]
+    assert "text_delta" in kinds
+    assert any(e.get("message", "").startswith("gemini failed") for e in events if e["type"] == "status")
+    assert events[-1]["type"] == "done"
+    assert events[-1]["text"] == "fallback text"
+    # History persisted once by the successful provider.
+    assert len(brain.history) == 2

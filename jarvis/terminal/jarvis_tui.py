@@ -1,6 +1,6 @@
 """JARVIS terminal UI — realtime streaming chat with live tool execution.
 
-Talks straight to the local Gemini tool loop (no server required), renders
+Talks straight to the local multi-provider tool loop (no server required), renders
 replies as they stream, shows every tool call as it happens, and asks for
 confirmation before anything risky runs.
 """
@@ -230,7 +230,7 @@ class JarvisTUI(App):
     }
     Input { background: #111a24; border: tall #1f6f8b; width: 1fr; }
     #send-btn { width: 14; background: #1f6f8b; color: #fff; }
-    #stop-btn { width: 12; background: #6c1f1f; color: #fff; }
+    #stop-btn { width: 10; background: #6c1f1f; color: #fff; }\n    #mic-btn { width: 10; background: #145a32; color: #fff; }
     #hint { height: 1; color: #4a6274; padding: 0 1; }
     """
 
@@ -255,6 +255,7 @@ class JarvisTUI(App):
         self.auto_allow: set[str] = set()
         self.last_reply = ""
         self.turn_started = 0.0
+        self.mic_worker = None
 
     # ------------------------------------------------------------- lifecycle
     def compose(self) -> ComposeResult:
@@ -268,24 +269,28 @@ class JarvisTUI(App):
                 yield Static("", id="sys-panel")
         with Horizontal(id="input-bar"):
             yield Input(placeholder="Ask JARVIS…   /help for commands", id="cmd", suggester=None)
+            yield Button("MIC", id="mic-btn", variant="success")
             yield Button("STOP", id="stop-btn", variant="error")
             yield Button("SEND", id="send-btn", variant="primary")
-        yield Static("Enter sends · F1 help · Ctrl+L clear · Ctrl+Q quit", id="hint")
+        yield Static("Enter sends · MIC records one utterance · F1 help · Ctrl+L clear · Ctrl+Q quit", id="hint")
         yield Footer()
 
     async def on_mount(self) -> None:
         if self.brain is None:
             self.brain = JarvisBrain()
         self.query_one("#stop-btn", Button).disabled = True
+        self.query_one("#mic-btn", Button).disabled = False
         self.query_one("#cmd", Input).focus()
-        self.set_interval(4.0, self.refresh_status)
+        self.set_interval(2.0, self.refresh_status)
         self.refresh_status()
 
-        self._sys("JARVIS online — direct Gemini tool loop, no server required.")
+        self._sys("JARVIS online — direct AI tool loop (Gemini/OpenRouter/Groq), no server required.")
         if not self.brain.configured:
-            self._sys("[red]GEMINI_API_KEY missing.[/red] Set it in .env (see .env.example), then restart.")
+            self._sys("[red]No AI provider key.[/red] Set GEMINI_API_KEY, OPENROUTER_API_KEY, or "
+                      "GROQ_API_KEY in .env (see .env.example), then restart.")
         else:
-            self._sys(f"model [magenta]{self.brain.model}[/magenta] · "
+            providers = ", ".join(self.brain.provider_candidates())
+            self._sys(f"providers [magenta]{providers}[/magenta] · model [magenta]{self.brain.active_model}[/magenta] · "
                       f"[cyan]{len(self.brain.registry)} tools[/cyan] · type /tools to inspect")
         self._sys("Ask anything, or try: “set volume to 20”, “open chrome and screenshot”, “battery status”.")
 
@@ -295,7 +300,8 @@ class JarvisTUI(App):
             return
         bar = self.query_one("#status-bar", StatusBar)
         data: dict[str, Any] = dict(getattr(bar, "data", {}) or {})
-        data["model"] = self.brain.model
+        data["model"] = self.brain.active_model
+        data["providers"] = ", ".join(self.brain.provider_candidates())
         data["tools"] = len(self.brain.registry)
         data["state"] = "THINKING" if self.busy else ("READY" if self.brain.configured else "ERROR")
         if self.turn_started:
@@ -342,9 +348,64 @@ class JarvisTUI(App):
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "send-btn":
             await self._submit()
+        elif event.button.id == "mic-btn":
+            self._start_mic_capture()
         elif event.button.id == "stop-btn":
             self.stop_requested = True
             self._sys("[yellow]stopping after current step…[/yellow]")
+
+    def _start_mic_capture(self) -> None:
+        """Capture one user-requested utterance without blocking the Textual UI."""
+        if self.busy or (self.mic_worker is not None and self.mic_worker.is_running):
+            self._sys("[yellow]JARVIS is busy or the microphone is already active.[/yellow]")
+            return
+        self.query_one("#mic-btn", Button).disabled = True
+        self._set_status("LISTENING")
+        self._sys("[cyan]MIC active — speak after the prompt. One utterance only; click MIC again for another.[/cyan]")
+        self.mic_worker = self._capture_and_transcribe()
+
+    @work(thread=True, exclusive=True, group="mic")
+    def _capture_and_transcribe(self) -> None:
+        """SpeechRecognition's Google endpoint transcribes the explicitly captured clip."""
+        try:
+            import speech_recognition as sr
+        except ImportError:
+            self.call_from_thread(
+                self._mic_finished,
+                None,
+                "Microphone support is not installed. Run: pip install 'SpeechRecognition[audio]'",
+            )
+            return
+        try:
+            recognizer = sr.Recognizer()
+            with sr.Microphone() as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                self.call_from_thread(self._sys, "[cyan]Listening now…[/cyan]")
+                audio = recognizer.listen(source, timeout=8, phrase_time_limit=15)
+            self.call_from_thread(self._set_status, "TRANSCRIBING")
+            transcript = recognizer.recognize_google(audio, language="en-IN")
+            self.call_from_thread(self._mic_finished, transcript, None)
+        except sr.WaitTimeoutError:
+            self.call_from_thread(self._mic_finished, None, "No speech detected within 8 seconds.")
+        except sr.UnknownValueError:
+            self.call_from_thread(self._mic_finished, None, "Speech was not clear enough to transcribe.")
+        except sr.RequestError as exc:
+            self.call_from_thread(self._mic_finished, None, f"Speech service unavailable: {_brief(str(exc), 120)}")
+        except Exception as exc:
+            self.call_from_thread(self._mic_finished, None, f"Microphone error: {_brief(str(exc), 120)}")
+
+    def _mic_finished(self, transcript: str | None, error: str | None) -> None:
+        self.query_one("#mic-btn", Button).disabled = False
+        self._set_status("READY")
+        if error:
+            self._sys(f"[red]MIC:[/red] {error}")
+            return
+        if transcript:
+            self._sys(f"[dim]heard: {_brief(transcript, 180)}[/dim]")
+            widget = self.query_one("#cmd", Input)
+            widget.value = transcript
+            self._user(f"🎙 {transcript}")
+            self._run_turn(transcript)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "cmd":
@@ -405,7 +466,7 @@ class JarvisTUI(App):
         self._sys(
             "[bold]Commands[/bold]  /help /clear /status /tools /model <name> /history /run <cmd> "
             "/allow <tool> /quit\n"
-            "[bold]Shortcuts[/bold]  Enter send · Ctrl+L clear · Ctrl+T sidebar · F1 help · Ctrl+Q quit\n"
+            "[bold]Shortcuts[/bold]  Enter send · MIC one-shot speech input · Ctrl+L clear · Ctrl+T sidebar · F1 help · Ctrl+Q quit\n"
             "[bold]Risky actions[/bold]  always ask first; /allow <tool> pre-approves one tool."
         )
 

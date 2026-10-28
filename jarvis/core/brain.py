@@ -1,8 +1,15 @@
-"""JARVIS brain — a streaming Gemini function-calling agent.
+"""JARVIS brain — a streaming multi-provider tool-calling agent.
 
-The brain is the single decision loop shared by the CLI and the TUI. It
-streams text as it is generated, emits structured tool events while actions
-run, and honours a confirmation callback before anything risky executes.
+The brain is the single decision loop shared by the CLI, the TUI and the
+WebSocket bridge. It streams text as it is generated, emits structured tool
+events while actions run, and honours a confirmation callback before anything
+risky executes.
+
+Text providers (in fallback order, ``JARVIS_AI_PROVIDER=auto`` by default):
+
+* ``gemini``     — Google Gemini via ``GEMINI_API_KEY`` (full model chain)
+* ``openrouter`` — OpenAI-compatible via ``OPENROUTER_API_KEY``
+* ``groq``       — OpenAI-compatible via ``GROQ_API_KEY``
 
 Events yielded by :meth:`JarvisBrain.ask`:
 
@@ -141,7 +148,22 @@ class TurnStats:
 
 
 class JarvisBrain:
-    """Streaming Gemini agent bound to the tool registry."""
+    """Streaming multi-provider agent bound to the tool registry."""
+
+    _OPENAI_PROVIDERS = {
+        "openrouter": (
+            "https://openrouter.ai/api/v1/chat/completions",
+            "OPENROUTER_API_KEY",
+            "OPENROUTER_MODEL",
+            "openai/gpt-4o-mini",
+        ),
+        "groq": (
+            "https://api.groq.com/openai/v1/chat/completions",
+            "GROQ_API_KEY",
+            "GROQ_MODEL",
+            "llama-3.3-70b-versatile",
+        ),
+    }
 
     def __init__(
         self,
@@ -151,10 +173,14 @@ class JarvisBrain:
         system_prompt: str | None = None,
         temperature: float = 0.7,
         history: list[dict[str, Any]] | None = None,
+        provider: str | None = None,
     ) -> None:
         load_env()
         self.api_key = (api_key or os.getenv("GEMINI_API_KEY", "")).strip()
         self.model = (model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")).strip()
+        self.provider_preference = (
+            provider or os.getenv("JARVIS_AI_PROVIDER", "auto") or "auto"
+        ).strip().lower()
         self.registry = registry or build_registry()
         self.system_prompt = system_prompt or DEFAULT_SYSTEM
         self.temperature = temperature
@@ -164,15 +190,50 @@ class JarvisBrain:
         self._client = None
 
     # ------------------------------------------------------------------ init
+    @staticmethod
+    def _configured_key(name: str) -> str:
+        """Read a provider key from the environment; blanks out placeholders."""
+        value = (os.getenv(name, "") or "").strip()
+        if not value or value.lower().startswith("replace"):
+            return ""
+        return value
+
+    def provider_candidates(self) -> list[str]:
+        """Configured providers in try-order; a valid preference goes first."""
+        available: list[str] = []
+        if self._configured_key("GEMINI_API_KEY") or (
+            self.api_key and not self.api_key.lower().startswith("replace")
+        ):
+            available.append("gemini")
+        if self._configured_key("OPENROUTER_API_KEY"):
+            available.append("openrouter")
+        if self._configured_key("GROQ_API_KEY"):
+            available.append("groq")
+        if self.provider_preference in available:
+            return [self.provider_preference] + [p for p in available if p != self.provider_preference]
+        return available
+
     @property
     def configured(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.provider_candidates())
+
+    @property
+    def active_model(self) -> str:
+        """Model the primary configured provider will use."""
+        candidates = self.provider_candidates()
+        if not candidates:
+            return self.model
+        primary = candidates[0]
+        if primary == "gemini":
+            return self.model
+        _, _, model_field, default = self._OPENAI_PROVIDERS[primary]
+        return (os.getenv(model_field, "") or default).strip()
 
     def _client_or_raise(self):
-        if not self.api_key:
+        if not self.api_key or self.api_key.lower().startswith("replace"):
             raise RuntimeError(
                 "GEMINI_API_KEY is not set. Copy .env.example to .env and add your key from "
-                "https://aistudio.google.com/apikey"
+                "https://aistudio.google.com/apikey (or set OPENROUTER_API_KEY / GROQ_API_KEY)."
             )
         if self._client is None:
             from google import genai
@@ -410,7 +471,8 @@ class JarvisBrain:
         except Exception as exc:
             android = {"devices": [], "connected": False, "error": str(exc)}
         return {
-            "model": self.model,
+            "model": self.active_model,
+            "providers": self.provider_candidates(),
             "configured": self.configured,
             "tools": len(self.registry),
             "history_turns": len(self.history),
@@ -427,139 +489,335 @@ class JarvisBrain:
         auto_approve: bool = False,
         extra_system: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Stream a full turn: text deltas, tool events, then a done event."""
-        if not self.configured:
-            yield {"type": "error", "error": "GEMINI_API_KEY is not set — cannot think."}
+        """Stream a full turn across configured providers: text, tools, done."""
+        providers = self.provider_candidates()
+        if not providers:
+            yield {
+                "type": "error",
+                "error": "No AI provider configured — set GEMINI_API_KEY, OPENROUTER_API_KEY, "
+                         "or GROQ_API_KEY in .env.",
+            }
             return
 
         yield {"type": "status", "message": "thinking"}
-
-        stats = TurnStats()
-        contents: list[dict[str, Any]] = [
-            {"role": item["role"], "parts": item["parts"]} for item in self.history
-        ]
-        contents.append({"role": "user", "parts": [{"text": message}]})
-
         system_instruction = self.build_system_instruction(extra_system)
-        declarations = self.registry.get_tool_schemas()
+        # Once any of these leaves the process, the turn is no longer replayable
+        # on another provider — only pre-output failures may fail over.
+        committed = {"text_delta", "tool_start", "tool_end", "tool_error", "tool_cancelled", "done"}
 
-        try:
-            client = self._client_or_raise()
-        except Exception as exc:
-            yield {"type": "error", "error": str(exc)}
-            return
-
-        final_text = ""
-        models = await self.model_candidates_async()
-        state = {"idx": 0}
-        logger.debug("Model chain: %s", models[:5])
-        try:
-            for _ in range(MAX_TURNS):
-                stats.model_turns += 1
-                from google.genai import types
-
-                config = types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=self.temperature,
-                    tools=[types.Tool(function_declarations=declarations)] if declarations else None,
-                )
-
-                function_calls: list[Any] = []
-                raw_parts: list[Any] = []
-
-                async for kind, payload in self._guarded_stream(
-                    client, models, state, contents, config
-                ):
-                    if kind == "event":
-                        yield payload
-                        continue
-                    chunk = payload
-                    if not chunk.candidates:
-                        continue
-                    content = chunk.candidates[0].content
-                    if not content or not content.parts:
-                        continue
-                    for part in content.parts:
-                        # Echo parts back verbatim so thought signatures survive.
-                        raw_parts.append(part)
-                        if getattr(part, "function_call", None):
-                            function_calls.append(part.function_call)
-                        if getattr(part, "text", None) and not getattr(part, "thought", False):
-                            stats.text_chars += len(part.text)
-                            final_text += part.text
-                            yield {"type": "text_delta", "text": part.text}
-
-                if not function_calls:
-                    break
-
-                # Replay the model turn exactly as it arrived (thought signatures
-                # are required by the API on functionCall parts), then answer it.
-                if raw_parts:
-                    contents.append({"role": "model", "parts": raw_parts})
-
-                response_parts: list[dict[str, Any]] = []
-                for fc in function_calls:
-                    name = fc.name
-                    args = dict(fc.args or {})
-                    tool = self.registry.get(name)
+        for index, provider in enumerate(providers):
+            stats = TurnStats()
+            emitted = False
+            try:
+                if provider == "gemini":
+                    runner = self._ask_gemini(message, confirm, auto_approve, system_instruction, stats)
+                else:
+                    runner = self._ask_openai(provider, message, confirm, auto_approve, system_instruction, stats)
+                async for event in runner:
+                    if event.get("type") in committed:
+                        emitted = True
+                    yield event
+                return
+            except Exception as exc:
+                logger.warning("AI provider %s failed during ask: %s", provider, exc)
+                if emitted:
+                    yield {"type": "error", "error": _friendly_error(exc, provider)}
+                    return
+                if index + 1 < len(providers):
                     yield {
-                        "type": "tool_start",
-                        "tool": name,
-                        "args": args,
-                        "risk": tool.risk.name if tool else "UNKNOWN",
-                        "category": tool.category if tool else "general",
+                        "type": "status",
+                        "message": f"{provider} failed — using {providers[index + 1]}",
                     }
-                    if tool is None:
-                        payload = {"success": False, "error": f"Unknown tool {name}"}
-                    else:
-                        result: ToolResult = await self.registry.execute(
-                            name,
-                            args,
-                            confirm=confirm,
-                            auto_approve=auto_approve,
-                            on_event=self._forward_lifecycle(stats),
-                        )
-                        stats.tools.append(name)
-                        payload = json.loads(result.for_model())
-                        yield {
-                            "type": "tool_end" if result.ok and not result.cancelled else
-                                   ("tool_cancelled" if result.cancelled else "tool_error"),
-                            "tool": name,
-                            "ok": result.ok and not result.cancelled,
-                            "summary": result.error if not result.ok else _short(result.data),
-                            "elapsed": round(result.elapsed, 3),
-                        }
-                    response_parts.append(
-                        {
-                            "function_response": {
-                                "name": name,
-                                "response": payload if isinstance(payload, dict) else {"result": payload},
-                            }
-                        }
-                    )
-                contents.append({"role": "user", "parts": response_parts})
-                yield {"type": "status", "message": "thinking"}
-            else:
-                yield {"type": "status", "message": "turn limit reached"}
+                    continue
+                yield {"type": "error", "error": _friendly_error(exc, provider)}
+                return
 
-        except Exception as exc:
-            logger.exception("Brain turn failed")
-            yield {"type": "error", "error": _friendly_error(exc)}
-            return
-
-        # Persist history
+    def _persist_turn(self, message: str, final_text: str) -> None:
         self.history.append({"role": "user", "parts": [{"text": message}]})
         if final_text:
             self.history.append({"role": "model", "parts": [{"text": final_text}]})
         self.history = self.history[-MAX_HISTORY_MESSAGES:]
 
-        yield {
+    @staticmethod
+    def _done_event(stats: TurnStats, final_text: str) -> dict[str, Any]:
+        return {
             "type": "done",
             "text": final_text,
             "turns": stats.model_turns,
             "tools_used": stats.tools,
             "elapsed": round(time.time() - stats.started, 2),
         }
+
+    async def _execute_calls(
+        self,
+        calls: list[dict[str, Any]],
+        confirm: ConfirmFn | None,
+        auto_approve: bool,
+        stats: TurnStats,
+        results: list[tuple[str, dict[str, Any]]],
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Run tool calls, yielding lifecycle events; append (name, payload) to results."""
+        for call in calls:
+            name = call["name"]
+            args = call.get("args") or {}
+            tool = self.registry.get(name)
+            yield {
+                "type": "tool_start",
+                "tool": name,
+                "args": args,
+                "risk": tool.risk.name if tool else "UNKNOWN",
+                "category": tool.category if tool else "general",
+            }
+            if tool is None:
+                payload: dict[str, Any] = {"success": False, "error": f"Unknown tool {name}"}
+            else:
+                result: ToolResult = await self.registry.execute(
+                    name,
+                    args,
+                    confirm=confirm,
+                    auto_approve=auto_approve,
+                    on_event=self._forward_lifecycle(stats),
+                )
+                stats.tools.append(name)
+                payload = json.loads(result.for_model())
+                yield {
+                    "type": "tool_end" if result.ok and not result.cancelled else
+                           ("tool_cancelled" if result.cancelled else "tool_error"),
+                    "tool": name,
+                    "ok": result.ok and not result.cancelled,
+                    "summary": result.error if not result.ok else _short(result.data),
+                    "elapsed": round(result.elapsed, 3),
+                }
+            results.append((name, payload if isinstance(payload, dict) else {"result": payload}))
+
+    async def _ask_gemini(
+        self,
+        message: str,
+        confirm: ConfirmFn | None,
+        auto_approve: bool,
+        system_instruction: str,
+        stats: TurnStats,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Gemini runner: model chain + function declarations. Raises on failure."""
+        contents: list[dict[str, Any]] = [
+            {"role": item["role"], "parts": item["parts"]} for item in self.history
+        ]
+        contents.append({"role": "user", "parts": [{"text": message}]})
+        declarations = self.registry.get_tool_schemas()
+
+        client = self._client_or_raise()
+        final_text = ""
+        models = await self.model_candidates_async()
+        state = {"idx": 0}
+        logger.debug("Model chain: %s", models[:5])
+
+        for _ in range(MAX_TURNS):
+            stats.model_turns += 1
+            from google.genai import types
+
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=self.temperature,
+                tools=[types.Tool(function_declarations=declarations)] if declarations else None,
+            )
+
+            function_calls: list[Any] = []
+            raw_parts: list[Any] = []
+
+            async for kind, payload in self._guarded_stream(
+                client, models, state, contents, config
+            ):
+                if kind == "event":
+                    yield payload
+                    continue
+                chunk = payload
+                if not chunk.candidates:
+                    continue
+                content = chunk.candidates[0].content
+                if not content or not content.parts:
+                    continue
+                for part in content.parts:
+                    # Echo parts back verbatim so thought signatures survive.
+                    raw_parts.append(part)
+                    if getattr(part, "function_call", None):
+                        function_calls.append(part.function_call)
+                    if getattr(part, "text", None) and not getattr(part, "thought", False):
+                        stats.text_chars += len(part.text)
+                        final_text += part.text
+                        yield {"type": "text_delta", "text": part.text}
+
+            if not function_calls:
+                break
+
+            # Replay the model turn exactly as it arrived (thought signatures
+            # are required by the API on functionCall parts), then answer it.
+            if raw_parts:
+                contents.append({"role": "model", "parts": raw_parts})
+
+            calls = [{"name": fc.name, "args": dict(fc.args or {})} for fc in function_calls]
+            results: list[tuple[str, dict[str, Any]]] = []
+            async for event in self._execute_calls(calls, confirm, auto_approve, stats, results):
+                yield event
+            response_parts = [
+                {"function_response": {"name": name, "response": payload}}
+                for name, payload in results
+            ]
+            contents.append({"role": "user", "parts": response_parts})
+            yield {"type": "status", "message": "thinking"}
+        else:
+            yield {"type": "status", "message": "turn limit reached"}
+
+        self._persist_turn(message, final_text)
+        yield self._done_event(stats, final_text)
+
+    def _openai_history(self, system_instruction: str, message: str) -> list[dict[str, Any]]:
+        """Convert the brain's Gemini-style history into OpenAI chat messages."""
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system_instruction}]
+        for item in self.history:
+            role = "assistant" if item.get("role") == "model" else item.get("role", "user")
+            parts = item.get("parts") or []
+            text = "".join(
+                p.get("text", "") for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str)
+            )
+            if text:
+                messages.append({"role": role, "content": text})
+        messages.append({"role": "user", "content": message})
+        return messages
+
+    def _openai_endpoint(self, provider: str) -> tuple[str, str, str]:
+        endpoint, key_field, model_field, default_model = self._OPENAI_PROVIDERS[provider]
+        key = self._configured_key(key_field)
+        if not key:
+            raise RuntimeError(f"{key_field} is not set in .env.")
+        model = (os.getenv(model_field, "") or default_model).strip()
+        return endpoint, key, model
+
+    async def _ask_openai(
+        self,
+        provider: str,
+        message: str,
+        confirm: ConfirmFn | None,
+        auto_approve: bool,
+        system_instruction: str,
+        stats: TurnStats,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """OpenRouter/Groq runner over the OpenAI chat-completions tool protocol."""
+        import httpx
+
+        endpoint, key, model = self._openai_endpoint(provider)
+        cooldown_key = f"{provider}:{model}"
+        if _is_cooling(cooldown_key):
+            raise RuntimeError(f"{provider}/{model} is cooling down after a recent failure.")
+
+        declarations = self.registry.get_tool_schemas()
+        tools = [{"type": "function", "function": d} for d in declarations]
+        messages = self._openai_history(system_instruction, message)
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        if provider == "openrouter":
+            headers["HTTP-Referer"] = "https://github.com/Ashokkunchala/Jarvis-Personal-AI"
+            headers["X-Title"] = "JARVIS Personal AI"
+
+        final_text = ""
+        timeout = httpx.Timeout(self.chunk_timeout, connect=min(self.first_token_timeout, 30.0))
+
+        for _ in range(MAX_TURNS):
+            stats.model_turns += 1
+            turn_text: list[str] = []
+            acc: dict[int, dict[str, str]] = {}
+
+            async with httpx.AsyncClient(timeout=timeout) as http:
+                payload: dict[str, Any] = {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": self.temperature,
+                    "stream": True,
+                    "tools": tools,
+                }
+                async with http.stream("POST", endpoint, headers=headers, json=payload) as response:
+                    if response.status_code >= 400:
+                        body = (await response.aread()).decode("utf-8", errors="replace")[:300]
+                        _mark_bad(cooldown_key)
+                        raise RuntimeError(f"{provider} returned HTTP {response.status_code}: {body}")
+                    async for line in response.aiter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if not data or data == "[DONE]":
+                            continue
+                        try:
+                            event = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = event.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta") or {}
+                        content = delta.get("content")
+                        if isinstance(content, str) and content:
+                            stats.text_chars += len(content)
+                            final_text += content
+                            turn_text.append(content)
+                            yield {"type": "text_delta", "text": content}
+                        for tc in delta.get("tool_calls") or []:
+                            index = tc.get("index") or 0
+                            slot = acc.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                            if tc.get("id"):
+                                slot["id"] = tc["id"]
+                            fn = tc.get("function") or {}
+                            if fn.get("name"):
+                                slot["name"] = fn["name"]
+                            if fn.get("arguments"):
+                                slot["arguments"] += fn["arguments"]
+            _mark_good(cooldown_key)
+
+            tool_calls = [acc[i] for i in sorted(acc)]
+            if not tool_calls:
+                break
+
+            assistant_tool_calls = []
+            for i, tc in enumerate(tool_calls):
+                assistant_tool_calls.append({
+                    "id": tc["id"] or f"call_{i}",
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": tc["arguments"] or "{}",
+                    },
+                })
+            messages.append({
+                "role": "assistant",
+                "content": "".join(turn_text) or None,
+                "tool_calls": assistant_tool_calls,
+            })
+
+            calls: list[dict[str, Any]] = []
+            call_ids: list[str] = []
+            for tool_call in assistant_tool_calls:
+                raw_args = tool_call["function"]["arguments"]
+                try:
+                    args = json.loads(raw_args or "{}")
+                except json.JSONDecodeError:
+                    args = {"_raw": raw_args}
+                if not isinstance(args, dict):
+                    args = {"value": args}
+                calls.append({"name": tool_call["function"]["name"], "args": args})
+                call_ids.append(tool_call["id"])
+
+            results: list[tuple[str, dict[str, Any]]] = []
+            async for event in self._execute_calls(calls, confirm, auto_approve, stats, results):
+                yield event
+            for tool_call_id, (_, payload) in zip(call_ids, results):
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": json.dumps(payload, ensure_ascii=False, default=str),
+                })
+            yield {"type": "status", "message": "thinking"}
+        else:
+            yield {"type": "status", "message": "turn limit reached"}
+
+        self._persist_turn(message, final_text)
+        yield self._done_event(stats, final_text)
 
     def _forward_lifecycle(self, stats: TurnStats) -> Callable[[dict[str, Any]], None]:
         """Bridge registry lifecycle events into the stream.
@@ -600,17 +858,20 @@ def _short(data: Any, limit: int = 200) -> str:
         return "ok"
 
 
-def _friendly_error(exc: Exception) -> str:
+def _friendly_error(exc: Exception, provider: str = "gemini") -> str:
     text = str(exc)
     lowered = text.lower()
-    if "api key" in lowered or "401" in text or "permission" in lowered:
-        return "Gemini rejected the API key — check GEMINI_API_KEY in .env."
-    if "429" in text or "quota" in lowered or "resource_exhausted" in lowered:
-        return "Gemini rate limit or quota exceeded — wait a moment and retry."
-    if "503" in text or "unavailable" in lowered:
-        return "Gemini service temporarily unavailable — retry shortly."
+    label = {"gemini": "Gemini", "openrouter": "OpenRouter", "groq": "Groq"}.get(provider, provider)
+    if "api key" in lowered or "401" in text or "unauthorized" in lowered or "permission" in lowered:
+        return f"{label} rejected the API key — check the {provider.upper()}_API_KEY entry in .env."
+    if "429" in text or "quota" in lowered or "rate limit" in lowered or "resource_exhausted" in lowered:
+        return f"{label} rate limit or quota exceeded — wait a moment and retry."
+    if "503" in text or "unavailable" in lowered or "overloaded" in lowered:
+        return f"{label} service temporarily unavailable — retry shortly."
     if "connection" in lowered or "timed out" in lowered or "timeout" in lowered:
-        return "Network problem reaching Gemini — check your connection."
+        return f"Network problem reaching {label} — check your connection."
     if "not found" in lowered and "model" in lowered:
-        return "Model not available for this key — try GEMINI_MODEL=gemini-2.5-flash."
+        if provider == "gemini":
+            return "Model not available for this key — try GEMINI_MODEL=gemini-2.5-flash."
+        return f"Model not available on {label} — check the model name in .env."
     return f"Request failed: {text[:300]}"

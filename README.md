@@ -1,14 +1,29 @@
 # JARVIS Personal AI
 
-A Gemini-powered personal assistant prototype for Indian English and Telugu. The intended personality is adaptive: friendly and witty for everyday chat, calm for serious topics, and energetic for coaching.
+A multi-provider personal assistant prototype for Indian English and Telugu, supporting Gemini, OpenRouter, and Groq for text chat. The intended personality is adaptive: friendly and witty for everyday chat, calm for serious topics, and energetic for coaching.
 
 > **Status: multi-component prototype, not a complete JARVIS yet.** This repository contains a local Gemini chat UI, authenticated SQLite APIs for explicit memories/reminders/workout logs, a first live web-search adapter, a restricted Windows helper, and a native Android starter screen. An earlier Android revision built successfully in GitHub Actions; the latest voice/language changes are awaiting their CI build and a physical-device end-to-end test. Public cloud deployment is not safe yet.
+
+## One-file Windows installer
+
+Download [INSTALL-JARVIS.ps1](INSTALL-JARVIS.ps1) from this branch, open PowerShell in its download folder, and run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\INSTALL-JARVIS.ps1
+```
+
+The installer downloads this branch, installs Python (using winget if needed), installs dependencies, asks for your Gemini key (OpenRouter/Groq are optional), creates local secrets, and registers a Windows sign-in task. After sign-in it starts the local backend, opens the browser UI, and opens the terminal assistant. It does not run as administrator or expose the server beyond localhost.
+
+In the browser, enter your generated `JARVIS_API_TOKEN` from the installed `.env` file once. If you choose **Remember device token on this browser**, it is stored in browser local storage for convenience; this is less secure than session-only entry. Then click **Start Live Voice** and grant microphone permission. Voice is not silently activated on boot; the explicit start control is intentional.
+
+**Android is a separate APK**, not installable by the Windows script. Get the debug APK from the successful [Android build artifact](https://github.com/Ashokkunchala/Jarvis-Personal-AI/actions). Install it on Android and configure your private HTTPS backend. Android 14 restricts starting microphone foreground services from boot, so the phone app cannot safely promise automatic always-listening voice after reboot; launch the app and start voice explicitly.
 
 ## Start here
 
 ### Terminal clients
 
-There are two independent terminal clients. The default one needs **only** `GEMINI_API_KEY` — it drives the same local tool-calling brain the browser uses, with no backend process.
+There are two independent terminal clients. The default one needs **any one** of `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `GROQ_API_KEY` — it drives the same local tool-calling brain the browser uses, with no backend process, and automatically falls back through every configured provider (`JARVIS_AI_PROVIDER` controls the order, default `auto`).
 
 ```powershell
 # Realtime full-screen UI: streaming text, live tool log, confirmation dialogs.
@@ -27,8 +42,11 @@ There are two independent terminal clients. The default one needs **only** `GEMI
 
 `jarvis_cli.py chat` is the **backend** client: it requires `JARVIS_API_TOKEN` and a running `jarvis_cli.py serve`, and streams from the authenticated HTTP API. Use it when you want the browser's memory/reminder/coaching context in the terminal. Both clients read `JARVIS_API_URL` if set and only send a token to HTTPS endpoints or localhost.
 
+- [Master Codex implementation brief](docs/CODEX-IMPLEMENTATION-PROMPT.md) — product vision, roadmap, repository rules, testing, and delivery requirements
 - [Windows setup](docs/SETUP-WINDOWS.md)
+- [Installation and live terminal microphone guide](docs/INSTALLATION-AND-LIVE-TERMINAL.md)
 - [Features and known limitations](docs/FEATURES.md)
+- [JARVIS Command Center dashboard](app/static/dashboard.html) — responsive live performance dashboard
 - [Milestone plan](docs/NEXT-MILESTONES.md)
 - [Personal data APIs and AI coaching](docs/PERSONAL-DATA-API.md)
 - [Live web research](docs/WEB-RESEARCH.md)
@@ -52,7 +70,7 @@ There are two independent terminal clients. The default one needs **only** `GEMI
 
 ### Backend and clients
 
-- FastAPI + Gemini chat backend with streamed browser replies and a stop control; the JSON chat endpoint remains available to native clients.
+- FastAPI chat backend with Gemini, OpenRouter, and Groq text providers; choose a preferred provider or use automatic fallback. Provider keys stay on the server. Real-time audio remains on Gemini Live.
 - Live authenticated terminal chat (`python jarvis_cli.py chat`) against the HTTP backend, plus a realtime full-screen Textual UI (`python jarvis_cli.py tui`) that talks to the local brain directly. Session context is held in process memory.
 - Adaptive personality instructions and English/Telugu response preference.
 - Browser speech input (only when manually activated and supported) and browser text-to-speech.
@@ -89,7 +107,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 notepad .env
 ```
 
-In the local `.env`, set `GEMINI_API_KEY` to your real key and replace the example `JARVIS_API_TOKEN` with a random secret generated using:
+In the local `.env`, set at least one AI provider key (`GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `GROQ_API_KEY` — optionally set `JARVIS_AI_PROVIDER` to `gemini`, `openrouter`, `groq` or `auto` to pick the order) and replace the example `JARVIS_API_TOKEN` with a random secret generated using:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -101,9 +119,9 @@ Keep `HOST=127.0.0.1`. Save `.env`, then start:
 .\scripts\start-windows.ps1
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Open the responsive [JARVIS Command Center dashboard](http://127.0.0.1:8000/dashboard) for live authenticated CPU/RAM/disk/battery telemetry and charts (enter your local device token). API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
-The local assistant (TUI, `ask`, laptop/android control) works without starting the backend — only `GEMINI_API_KEY` is required:
+The local assistant (TUI, `ask`, laptop/android control) works without starting the backend — only one provider key (`GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `GROQ_API_KEY`) is required:
 
 ```powershell
 .\.venv\Scripts\python.exe jarvis_cli.py tui      # realtime streaming terminal UI
