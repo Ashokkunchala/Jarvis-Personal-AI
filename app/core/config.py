@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     gemini_model_fallback: str = "gemini-1.5-flash"
     gemini_live_model: str = "gemini-3.8-live"
-    gemini_live_voice: str = "Aoede"
+    gemini_live_voice: str = "Charon"
     openrouter_api_key: str = ""
     openrouter_model: str = "openai/gpt-4o-mini"
     groq_api_key: str = ""
