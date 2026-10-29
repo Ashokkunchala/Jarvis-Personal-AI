@@ -46,18 +46,18 @@
 Windows PowerShell from the repository root:
 
 ```powershell
-# Configure Charon voice, prompt for a Gemini key if needed, generate missing local secrets,
-# and validate the local settings. Does not print secret values.
+# Check Python 3.11+, configure Charon, prompt for a Gemini key if needed,
+# generate missing local secrets, and validate local settings.
 .\\scripts\\setup-live-voice.ps1
 
-# Optional: install project dependencies as part of setup.
+# Create .venv and install/upgrade requirements-dev.txt (runtime + test dependencies).
 .\\scripts\\setup-live-voice.ps1 -InstallDependencies
 
-# Optional: install dependencies if needed and start the backend.
+# Install dependencies, then start the backend.
 .\\scripts\\setup-live-voice.ps1 -InstallDependencies -StartAfterSetup
 ```
 
-The script edits only your local `.env`, which is ignored by Git. It cannot verify the Gemini model is enabled for your account or prove that microphone capture and audio playback work; test those in the browser after the backend starts.
+The script checks Python 3.11+ and warns if Git is missing. With `-InstallDependencies`, it creates `.venv`, upgrades pip, and installs `requirements-dev.txt`. It edits only your local `.env`, which is ignored by Git. It cannot verify the Gemini model is enabled for your account or prove that microphone capture and audio playback work; test those in the browser after the backend starts.
 
 If you prefer manual setup, use `.\\scripts\\setup-windows.ps1`, set `GEMINI_API_KEY`, `GEMINI_LIVE_MODEL`, `GEMINI_LIVE_VOICE=Charon`, and a random `JARVIS_API_TOKEN` in `.env`, then run `.\\scripts\\start-windows.ps1`.
 
