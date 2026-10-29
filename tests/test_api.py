@@ -164,6 +164,8 @@ def test_chat_history_reaches_openai_provider_with_assistant_role(monkeypatch):
         return "openrouter/openai/gpt-4o-mini", "openai reply"
 
     monkeypatch.setattr("app.main.complete_chat", fake_chat)
+    # The test stubs the provider call, so declare a provider as configured too.
+    monkeypatch.setattr("app.main.configured_provider_order", lambda _settings: ["openrouter"])
     with TestClient(app) as client:
         response = client.post(
             "/api/chat",
