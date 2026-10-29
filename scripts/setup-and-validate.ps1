@@ -97,7 +97,7 @@ if (!$SkipDependencyInstall) {
     Warn "Dependency installation skipped by -SkipDependencyInstall."
 }
 
-& $venvPython -c "import sys; print('Runtime:', sys.version)"
+& $venvPython -c 'import sys; print("Runtime:", sys.version)'
 if ($LASTEXITCODE -ne 0) { Fail "Python runtime check failed." } else { Pass "Python runtime starts" }
 & $venvPython -m pip check
 if ($LASTEXITCODE -ne 0) { Fail "pip dependency consistency check failed." } else { Pass "pip dependency consistency" }
