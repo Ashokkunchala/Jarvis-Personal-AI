@@ -43,14 +43,22 @@
 
 ## Run the existing app
 
-Windows PowerShell:
+Windows PowerShell from the repository root:
 
 ```powershell
-.\scripts\setup-windows.ps1
-# Set GEMINI_API_KEY and a random JARVIS_API_TOKEN in the local .env
-.\scripts\start-windows.ps1
+# Configure Charon voice, prompt for a Gemini key if needed, generate missing local secrets,
+# and validate the local settings. Does not print secret values.
+.\\scripts\\setup-live-voice.ps1
+
+# Optional: install project dependencies as part of setup.
+.\\scripts\\setup-live-voice.ps1 -InstallDependencies
+
+# Optional: install dependencies if needed and start the backend.
+.\\scripts\\setup-live-voice.ps1 -InstallDependencies -StartAfterSetup
 ```
 
-Open `http://127.0.0.1:8000`, paste the same token configured on the backend, and click **Save settings**. The default server voice is `Charon` (`GEMINI_LIVE_VOICE=Charon` in `.env`); restart the backend after changing it. Tap **Start Live Voice** only after confirming the Gemini Live model is enabled for your API account. If the Live session cannot connect, the typed/Dictate path remains the fallback.
+The script edits only your local `.env`, which is ignored by Git. It cannot verify the Gemini model is enabled for your account or prove that microphone capture and audio playback work; test those in the browser after the backend starts.
+
+If you prefer manual setup, use `.\\scripts\\setup-windows.ps1`, set `GEMINI_API_KEY`, `GEMINI_LIVE_MODEL`, `GEMINI_LIVE_VOICE=Charon`, and a random `JARVIS_API_TOKEN` in `.env`, then run `.\\scripts\\start-windows.ps1`.
 
 Keep the backend local/private. Do not use a public tunnel until the security acceptance checklist is complete.
