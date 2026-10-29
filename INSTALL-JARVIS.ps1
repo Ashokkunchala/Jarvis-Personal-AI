@@ -80,7 +80,7 @@ try {
             $pyCommand = Get-Command py -ErrorAction SilentlyContinue
             if ($pyCommand) {
                 try {
-                    $candidate = (& $pyCommand.Source -3.14 -c "import sys; print(sys.executable) 2>$null | Select-Object -First 1)
+                    $candidate = (& $pyCommand.Source -3.14 -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1)
                     if ($LASTEXITCODE -eq 0 -and $candidate) { $pythonExe = $candidate.Trim() }
                 } catch {
                     $pythonExe = $null
