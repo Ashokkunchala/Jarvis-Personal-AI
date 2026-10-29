@@ -97,7 +97,7 @@ if (!$SkipDependencyInstall) {
     Warn "Dependency installation skipped by -SkipDependencyInstall."
 }
 
-& $venvPython -c 'import sys; print("Runtime:", sys.version)'
+& $venvPython -c "import sys; print(sys.version)"
 if ($LASTEXITCODE -ne 0) { Fail "Python runtime check failed." } else { Pass "Python runtime starts" }
 & $venvPython -m pip check
 if ($LASTEXITCODE -ne 0) { Fail "pip dependency consistency check failed." } else { Pass "pip dependency consistency" }
@@ -205,10 +205,10 @@ Write-Host "Setup and local checks completed. This does not prove provider conne
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "  1. Review local .env; keep all API keys and tokens private."
-Write-Host "  2. Start JARVIS with: .\scripts\start-windows.ps1"
-Write-Host "  3. Open http://127.0.0.1:8000 and test chat/voice manually."
-Write-Host "  4. For terminal UI: .\.venv\Scripts\python.exe jarvis_cli.py tui"
-Write-Host "  5. For Android, build/install the separate APK and test on a physical device."
+Write-Host ('  2. Start JARVIS with: .\scripts\start-windows.ps1')
+Write-Host ('  3. Open http://127.0.0.1:8000 and test chat/voice manually.')
+Write-Host ('  4. For terminal UI: .\.venv\Scripts\python.exe jarvis_cli.py tui')
+Write-Host ('  5. For Android, build/install the separate APK and test on a physical device.')
 
 if ($StartAfterSetup) {
     Write-Section "Starting JARVIS"
