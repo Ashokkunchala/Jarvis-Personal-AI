@@ -33,6 +33,15 @@ def test_every_tool_has_a_json_safe_schema(registry: ToolRegistry) -> None:
         json.dumps(schema)
 
 
+def test_direct_desktop_action_tools_are_registered(registry: ToolRegistry) -> None:
+    open_website = registry.get("open_website")
+    open_and_type = registry.get("open_app_and_type")
+    assert open_website is not None
+    assert open_and_type is not None
+    assert "browser" in open_website.description.lower()
+    assert "never presses Enter" in open_and_type.description
+
+
 def test_registry_lookup_helpers(registry: ToolRegistry) -> None:
     assert "battery_status" in registry.names("system")
     assert registry.get("battery_status") is not None

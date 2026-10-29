@@ -20,6 +20,16 @@ Status meanings: **implemented** means code exists; **CI verified** means automa
 | Native Android app | Initial implementation; CI debug build has passed on earlier revision | Kotlin/Compose, HTTPS health check, Android Keystore token, authenticated chat, tap-to-speak and spoken replies, English/Telugu choice; physical-device test pending |
 | Windows companion agent | Restricted initial implementation | Integrated with the local dashboard for authenticated status and user-confirmed allow-listed HTTPS URL opening; no arbitrary shell/app/file control |
 | Laptop/Android tool core | Broad implementation, safety/device tests still needed | Typed risk-graded tool registry; risky actions must remain confirmation-gated |
+| Visible website launch and direct app typing | Initial implementation; CI and Windows verification pending | Tools added for website launch and typing requested text into a launched application; real window focus and input automation need Windows testing |
+| YouTube search and playback | Not started / partial research adapter only | Needs browser search/selection and playback verification; public web search alone does not prove playback |
+| Local file and app operations | Broad initial implementation; safety review pending | Listing, search, copy/move/rename/delete and app launch exist in tool core; verify confirmation gates, recycle-bin behavior, permissions and Windows results |
+| Gmail and Google Workspace | Not started | Requires official OAuth/API integration, least-privilege scopes, account controls, audit log and confirmation for send/share/delete |
+| WhatsApp messaging | Not started / partial desktop launch capability | App/web launch and draft typing may be possible; sending requires explicit authorization and supported logged-in session |
+| Install/uninstall and system maintenance | Partial, guarded shell only | Needs official package-manager integration, preview/approval flow, rollback notes and administrator elevation safeguards |
+| Warnings and proactive notifications | Partial | Local notification/reminder components exist; threshold monitoring, actionable warnings and user controls need verification |
+| Music search and playback | Not started end-to-end | Requires authorized service/browser integration and playback confirmation; singing/generated music depends on configured capabilities |
+| Debugging and self-development | Partial foundation | Coding/research tools and roadmap exist; require sandboxed branch-based changes, regression tests and approval before merge/deploy |
+| Brainstorming and conversational reflection | Partially implemented | Chat personality supports conversation; distinguish generated suggestions from facts and never invent lived experiences |
 | Workout tracking | Implemented | SQLite activity log with list/delete |
 | Workout/nutrition coaching | Implemented; live-key test pending | Authenticated Gemini endpoints with general-information safeguards |
 | Secure cloud deployment | Not ready | Shared-token prototype; per-device pairing/revocation, consistent rate limiting, audit/monitoring and production hardening remain |

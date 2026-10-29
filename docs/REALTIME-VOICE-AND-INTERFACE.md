@@ -4,6 +4,7 @@
 
 - Browser dashboard with responsive JARVIS orb, ready/listening/thinking/speaking states, text chat, transcript view, and explicit live voice start/stop/interruption controls.
 - Browser Live Voice client that requests microphone access after a user click, down-samples audio to 16 kHz PCM16, streams frames to the backend, and plays returned 24 kHz PCM audio.
+- Default Live Voice profile uses Gemini's `Charon` prebuilt voice for a composed, lower-register assistant style. Override with `GEMINI_LIVE_VOICE` in `.env` if your enabled model supports another prebuilt voice. This is an original JARVIS-inspired voice profile, not a copy of a film actor's exact voice.
 - FastAPI WebSocket route at `/api/live-voice`. It authenticates the configured bearer token, checks browser Origin against configured CORS origins, keeps the Gemini API key on the server, validates payload sizes, opens a Gemini Live session, forwards audio/text/transcripts, and closes the session on disconnect.
 - Typed chat remains available as a fallback. Voice-session model tool calls are not permitted to execute device actions.
 
@@ -42,14 +43,22 @@
 
 ## Run the existing app
 
-Windows PowerShell:
+Windows PowerShell from the repository root:
 
 ```powershell
-.\scripts\setup-windows.ps1
-# Set GEMINI_API_KEY and a random JARVIS_API_TOKEN in the local .env
-.\scripts\start-windows.ps1
+# Check Python 3.11+, configure Charon, prompt for a Gemini key if needed,
+# generate missing local secrets, and validate local settings.
+.\\scripts\\setup-live-voice.ps1
+
+# Create .venv and install/upgrade requirements-dev.txt (runtime + test dependencies).
+.\\scripts\\setup-live-voice.ps1 -InstallDependencies
+
+# Install dependencies, then start the backend.
+.\\scripts\\setup-live-voice.ps1 -InstallDependencies -StartAfterSetup
 ```
 
-Open `http://127.0.0.1:8000`, paste the same token configured on the backend, and click **Save settings**. Tap **Start Live Voice** only after confirming the Gemini Live model is enabled for your API account. If the Live session cannot connect, the typed/Dictate path remains the fallback.
+The script checks Python 3.11+ and warns if Git is missing. With `-InstallDependencies`, it creates `.venv`, upgrades pip, and installs `requirements-dev.txt`. It edits only your local `.env`, which is ignored by Git. It cannot verify the Gemini model is enabled for your account or prove that microphone capture and audio playback work; test those in the browser after the backend starts.
+
+If you prefer manual setup, use `.\\scripts\\setup-windows.ps1`, set `GEMINI_API_KEY`, `GEMINI_LIVE_MODEL`, `GEMINI_LIVE_VOICE=Charon`, and a random `JARVIS_API_TOKEN` in `.env`, then run `.\\scripts\\start-windows.ps1`.
 
 Keep the backend local/private. Do not use a public tunnel until the security acceptance checklist is complete.
