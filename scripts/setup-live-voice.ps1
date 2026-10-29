@@ -116,9 +116,14 @@ if (!$pythonCommand) {
     throw "Python 3.11+ is required. Install it from https://www.python.org/downloads/windows/, enable PATH, reopen PowerShell, and rerun this script."
 }
 if ($pythonCommand.Name -like "py*") {
-    & py -3.11 --version 2>$null
-    if ($LASTEXITCODE -ne 0) { throw "Python 3.11+ was not found via the py launcher. Install Python 3.11 or newer." }
-    $PythonCommandLine = "py -3.11"
+    $launcherVersion = (& py -3 --version 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or !$launcherVersion) { throw "Python 3.11+ was not found via the py launcher. Install Python 3.11 or newer." }
+    $versionText = ($launcherVersion -replace '^Python\s+', '').Trim()
+    $versionParts = $versionText.Split('.')
+    if ([int]$versionParts[0] -lt 3 -or ([int]$versionParts[0] -eq 3 -and [int]$versionParts[1] -lt 11)) {
+        throw "Python 3.11+ is required; detected $launcherVersion."
+    }
+    $PythonCommandLine = "py -3"
     $PythonExe = "py"
 } else {
     & python --version
@@ -144,7 +149,7 @@ $shouldInstall = $InstallDependencies -or ($StartAfterSetup -and !(Test-Path $Ve
 if ($shouldInstall) {
     Write-Step "Create virtual environment and install requirements"
     if (!(Test-Path $VenvPython)) {
-        if ($PythonCommandLine -eq "py -3.11") { & py -3.11 -m venv (Join-Path $RepoRoot ".venv") }
+        if ($PythonCommandLine -eq "py -3") { & py -3 -m venv (Join-Path $RepoRoot ".venv") }
         else { & python -m venv (Join-Path $RepoRoot ".venv") }
         if ($LASTEXITCODE -ne 0) { throw "Could not create .venv. Confirm Python 3.11+ and venv support are installed." }
     }
