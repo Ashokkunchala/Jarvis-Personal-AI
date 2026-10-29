@@ -26,6 +26,8 @@ def _fresh_settings(monkeypatch):
 
 def test_health_reports_configured_providers(monkeypatch):
     monkeypatch.setenv("JARVIS_API_TOKEN", TOKEN)
+    # Health should report the provider configured in this isolated test.
+    monkeypatch.setattr("app.main_enhanced.configured_provider_order", lambda _settings: ["openrouter"])
     with TestClient(app) as client:
         response = client.get("/health")
     assert response.status_code == 200
@@ -80,6 +82,8 @@ def test_chat_falls_back_to_openrouter_when_gemini_unavailable(monkeypatch):
         return "openrouter/openai/gpt-4o-mini", "reply from openrouter"
 
     monkeypatch.setattr("app.main_enhanced.complete_chat", fake_complete)
+    # A stubbed OpenRouter response requires OpenRouter in the provider order.
+    monkeypatch.setattr("app.main_enhanced.configured_provider_order", lambda _settings: ["openrouter"])
     try:
         with TestClient(app) as client:
             gemini_service.client = None  # simulate missing/invalid Gemini client
