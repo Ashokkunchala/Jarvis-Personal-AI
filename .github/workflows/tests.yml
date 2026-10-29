@@ -57,6 +57,7 @@ jobs:
           $files = @(
             "INSTALL-JARVIS.ps1",
             "scripts/setup-windows.ps1",
+            "scripts/setup-and-validate.ps1",
             "scripts/start-windows.ps1",
             "scripts/start-jarvis-session.ps1",
             "scripts/start-jarvis-terminal.ps1"
