@@ -109,11 +109,60 @@ foreach ($check in $checks) {
 }
 if ($failed) { throw "One or more configuration checks failed. Review the messages above." }
 
-if ($InstallDependencies -or ($StartAfterSetup -and !(Test-Path (Join-Path $RepoRoot ".venv\Scripts\python.exe")))) {
-    Write-Step "Install project dependencies"
-    if (!(Test-Path $SetupScript)) { throw "Setup script not found: $SetupScript" }
-    & $SetupScript
-    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Dependency setup failed with exit code $LASTEXITCODE." }
+Write-Step "Check prerequisites"
+$pythonCommand = Get-Command py -ErrorAction SilentlyContinue
+if (!$pythonCommand) { $pythonCommand = Get-Command python -ErrorAction SilentlyContinue }
+if (!$pythonCommand) {
+    throw "Python 3.11+ is required. Install it from https://www.python.org/downloads/windows/, enable PATH, reopen PowerShell, and rerun this script."
+}
+if ($pythonCommand.Name -like "py*") {
+    & py -3.11 --version 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "Python 3.11+ was not found via the py launcher. Install Python 3.11 or newer." }
+    $PythonCommandLine = "py -3.11"
+    $PythonExe = "py"
+} else {
+    & python --version
+    $versionText = (& python -c "import sys; print('%d.%d' % sys.version_info[:2])").Trim()
+    $versionParts = $versionText.Split('.')
+    if ([int]$versionParts[0] -lt 3 -or ([int]$versionParts[0] -eq 3 -and [int]$versionParts[1] -lt 11)) {
+        throw "Python 3.11+ is required; detected $versionText."
+    }
+    $PythonCommandLine = "python"
+    $PythonExe = "python"
+}
+Write-Host "[PASS] Python 3.11+ is available." -ForegroundColor Green
+
+$git = Get-Command git -ErrorAction SilentlyContinue
+if ($git) {
+    Write-Host "[PASS] Git is installed." -ForegroundColor Green
+} else {
+    Write-Warning "Git was not found. Git is only needed to clone/update the repository; setup can continue in an existing checkout."
+}
+
+$VenvPython = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+$shouldInstall = $InstallDependencies -or ($StartAfterSetup -and !(Test-Path $VenvPython))
+if ($shouldInstall) {
+    Write-Step "Create virtual environment and install requirements"
+    if (!(Test-Path $VenvPython)) {
+        if ($PythonCommandLine -eq "py -3.11") { & py -3.11 -m venv (Join-Path $RepoRoot ".venv") }
+        else { & python -m venv (Join-Path $RepoRoot ".venv") }
+        if ($LASTEXITCODE -ne 0) { throw "Could not create .venv. Confirm Python 3.11+ and venv support are installed." }
+    }
+    if (!(Test-Path $VenvPython)) { throw "Virtual environment Python was not created at $VenvPython." }
+    & $VenvPython -m pip install --upgrade pip
+    if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed." }
+    $requirements = Join-Path $RepoRoot "requirements-dev.txt"
+    if (!(Test-Path $requirements)) { throw "requirements-dev.txt is missing. Cannot install project dependencies." }
+    & $VenvPython -m pip install -r $requirements
+    if ($LASTEXITCODE -ne 0) { throw "Installing requirements-dev.txt failed. Check internet access and the pip error above." }
+    Write-Host "[PASS] Installed requirements-dev.txt (runtime + development/test dependencies)." -ForegroundColor Green
+} else {
+    Write-Host "Dependency installation skipped. Use -InstallDependencies to install/update requirements-dev.txt."
+    if (Test-Path $VenvPython) {
+        Write-Host "[PASS] Existing .venv Python found."
+    } else {
+        Write-Host "No .venv found yet; use -InstallDependencies or -StartAfterSetup to create it."
+    }
 }
 
 Write-Step "Setup complete"
