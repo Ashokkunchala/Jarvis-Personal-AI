@@ -195,20 +195,20 @@ try {
     Warn "No responding JARVIS API found at $healthUrl. This is normal before startup; run the start script to check the live endpoint."
 }
 
-Write-Section "Summary"
+Write-Section 'Summary'
 if ($Failures.Count -gt 0) {
-    Write-Host ("Setup completed with {0} failure(s):" -f $Failures.Count) -ForegroundColor Red
-    foreach ($item in $Failures) { Write-Host " - $item" -ForegroundColor Red }
-    throw "JARVIS setup/validation failed. Resolve the failures above and rerun this script."
+    Write-Host ('Setup completed with {0} failure(s):' -f $Failures.Count) -ForegroundColor Red
+    foreach ($item in $Failures) { Write-Host (' - ' + $item) -ForegroundColor Red }
+    throw 'JARVIS setup/validation failed. Resolve the failures above and rerun this script.'
 }
-Write-Host "Setup and local checks completed. This does not prove provider connectivity, microphone/speaker behavior, Android hardware actions, or production readiness." -ForegroundColor Green
-Write-Host ""
-Write-Host "Next steps:"
-Write-Host "  1. Review local .env; keep all API keys and tokens private."
-Write-Host ('  2. Start JARVIS with: .\scripts\start-windows.ps1')
-Write-Host ('  3. Open http://127.0.0.1:8000 and test chat/voice manually.')
-Write-Host ('  4. For terminal UI: .\.venv\Scripts\python.exe jarvis_cli.py tui')
-Write-Host ('  5. For Android, build/install the separate APK and test on a physical device.')
+Write-Host 'Setup and local checks completed. This does not prove provider connectivity, microphone/speaker behavior, Android hardware actions, or production readiness.' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Next steps:'
+Write-Host '  1. Review local .env; keep all API keys and tokens private.'
+Write-Host '  2. Start JARVIS with: .\scripts\start-windows.ps1'
+Write-Host '  3. Open http://127.0.0.1:8000 and test chat/voice manually.'
+Write-Host '  4. For terminal UI: .\.venv\Scripts\python.exe jarvis_cli.py tui'
+Write-Host '  5. For Android, build/install the separate APK and test on a physical device.'
 
 if ($StartAfterSetup) {
     Write-Section 'Starting JARVIS'
