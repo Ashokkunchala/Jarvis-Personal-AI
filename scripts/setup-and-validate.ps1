@@ -211,6 +211,7 @@ Write-Host ('  4. For terminal UI: .\.venv\Scripts\python.exe jarvis_cli.py tui'
 Write-Host ('  5. For Android, build/install the separate APK and test on a physical device.')
 
 if ($StartAfterSetup) {
-    Write-Section "Starting JARVIS"
-    & (Join-Path -Path $RepoRoot -ChildPath 'scripts\start-windows.ps1')
+    Write-Section 'Starting JARVIS'
+    $startScript = Join-Path -Path $RepoRoot -ChildPath 'scripts\start-windows.ps1'
+    & $startScript
 }
