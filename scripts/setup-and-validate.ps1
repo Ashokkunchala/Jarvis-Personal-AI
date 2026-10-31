@@ -212,5 +212,5 @@ Write-Host ('  5. For Android, build/install the separate APK and test on a phys
 
 if ($StartAfterSetup) {
     Write-Section "Starting JARVIS"
-    & (Join-Path $RepoRoot "scripts\start-windows.ps1")
+    & (Join-Path -Path $RepoRoot -ChildPath 'scripts\start-windows.ps1')
 }
