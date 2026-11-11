@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Fixed `jarvis_daemon.py` and `run_enhanced.py`, which had escaped triple quotes and failed with SyntaxError.
+- Tools that need approval now fail closed: with no confirmation callback they do not run. CLI chat now asks on the terminal before running them.
+- Shell classifier no longer treats chained, piped, redirected or substituted commands as safe.
+- CI now compiles every Python file and lints for syntax errors and undefined names. (The earlier lint-job claim in this file was not backed by the workflow.)
+- Raised dependency floors to versions with no known advisories at the time of the audit: cryptography>=50.0, pillow>=13.0, pyopenssl>=26.4, pytest>=9.0.3, pytest-asyncio>=1.3.
+- Added AWS DevOps tools: offline reviewers for Terraform, Dockerfiles, GitHub Actions/Jenkinsfiles and IAM policies, troubleshooting runbooks (ECS, EKS, Terraform locks, Jenkins, ALB, IAM), `aws_read` (read-only AWS CLI) and `aws_change` (always asks first). Not tested against a real AWS account.
 - Reworked the browser dashboard into a voice-first JARVIS command centre with a responsive layout, animated assistant orb, visible listening/thinking/speaking/ready states, and explicit voice controls.
 - Added transcript-first capture: speech recognition displays interim/final text for review and does not automatically submit a dictated phrase.
 - Added voice cancellation and stop-speaking controls, plus reduced-motion accessibility support.
