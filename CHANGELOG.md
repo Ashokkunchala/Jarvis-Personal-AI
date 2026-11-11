@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Live voice can now call three read-only tools (current time, open reminders, saved memories). Calls are run server-side, restricted to an allow-list, and anything else is refused. Voice cannot add or change reminders, memories, files or devices. The tool-call wiring was written against the installed google-genai types and tested with a fake session; it has not been run against the real Live API.
 - Live voice session guardrails: maximum session length (default 900 s), idle timeout (120 s, pings do not count), per-minute audio volume cap (1.5x real time) and a concurrent-session cap (2). Override with `JARVIS_LIVE_MAX_SESSION_SECONDS`, `JARVIS_LIVE_IDLE_TIMEOUT_SECONDS`, `JARVIS_LIVE_MAX_AUDIO_BYTES_PER_MINUTE`, `JARVIS_LIVE_MAX_CONCURRENT_SESSIONS`.
 - Added WebSocket flow tests for live voice against a fake Gemini client (ticket rejection, event forwarding, bad frames, rate limit, idle timeout, session cap). These do not prove behaviour with the real Live API or a microphone.
 - Fixed `jarvis_daemon.py` and `run_enhanced.py`, which had escaped triple quotes and failed with SyntaxError.
