@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- After pressing Interrupt, audio of the old reply that is still in flight is now dropped until that turn ends (turn_complete or interrupted, or 5 s). Before, late chunks restarted playback and the UI said "speaking" next to "interrupted". Checked in headless Chrome with a fake session; real-model timing is untested.
 - Fixed the page script, found by running it in a real headless Chrome: `index.html` called `$("voiceStop").addEventListener`, but no element had that id, so the inline script threw during load and the live voice Stop/Interrupt controls never worked. Added the missing button and a test that every id the scripts look up exists in the page.
 - Fixed `/static/live_voice.js` returning 404 (nothing served it), so the live voice client never loaded. Both `app.main` and `app.main_enhanced` now serve it. `app.main_enhanced` (used by the Dockerfile and `run_enhanced.py`) did not include the live voice router at all; it does now.
 - Removed a stray literal `\n` shown on the page. The approval prompt now sits under the live voice status line.
