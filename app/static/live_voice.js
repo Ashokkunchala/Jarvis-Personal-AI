@@ -10,6 +10,7 @@
   const setUi=(state,detail)=>{
     if(typeof window.jarvisSetVoiceState==="function") window.jarvisSetVoiceState(state,
       state==="listening"?"Listening to you":state==="thinking"?"JARVIS is thinking":state==="speaking"?"JARVIS is speaking":"JARVIS is ready",detail);
+    const dictationStop=$("voiceStop");if(dictationStop)dictationStop.hidden=true; // dictation is not running during live voice
     $("liveVoiceConnect").hidden=active;
     $("liveVoiceStop").hidden=!active;
     $("liveVoiceInterrupt").hidden=!active;
@@ -58,7 +59,7 @@
   }
   function showApproval(m){
     clearApproval();
-    const anchor=$("liveVoiceTranscript");if(!anchor||typeof m.id!=="string")return;
+    const anchor=$("liveVoiceStatus");if(!anchor||typeof m.id!=="string")return;
     const box=document.createElement("div");box.setAttribute("role","alertdialog");box.setAttribute("aria-label","Approve JARVIS action");
     box.style.cssText="margin:.4rem 0;padding:.5rem;border:1px solid var(--muted,#888);border-radius:8px;font-size:.85rem";
     const label=document.createElement("div");label.textContent="JARVIS asks to: "+String(m.summary||m.name||"make a change").slice(0,300);
@@ -66,7 +67,7 @@
     const no=document.createElement("button");no.type="button";no.textContent="Deny";
     const answer=approve=>{send({type:"approval",id:m.id,approve:approve===true});clearApproval();status(approve?"Approved. Waiting for JARVIS to finish.":"Denied. Nothing was changed.");};
     yes.addEventListener("click",()=>answer(true));no.addEventListener("click",()=>answer(false));
-    box.append(label,yes,no);anchor.after(box);approvalBox=box;yes.focus();
+    box.append(label,yes,no);anchor.after(box);approvalBox=box;yes.focus();box.scrollIntoView({block:"nearest"});
     approvalTimer=setTimeout(()=>{clearApproval();status("Approval timed out. Nothing was changed.");},(Number(m.expires_in)||60)*1000);
   }
   async function onMessage(event){
