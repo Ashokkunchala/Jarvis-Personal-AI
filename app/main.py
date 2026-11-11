@@ -1,4 +1,13 @@
-import hmac
+"""Minimal FastAPI application.
+
+The production entry points -- ``jarvis serve``, ``scripts/start-windows.ps1``,
+``run_enhanced.py`` and the Docker image -- serve ``app.main_enhanced:app``,
+which adds the WebSocket brain bridge, device pairing/revocation and
+``/api/health/detailed``. This smaller app is kept for lightweight deployments
+and for the API tests that exercise shared routes. When a shared route changes,
+update both modules (or route the change through a shared helper).
+"""
+
 import json
 import logging
 import platform
@@ -9,6 +18,7 @@ import psutil
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from google import genai
 from pydantic import BaseModel, Field
 
@@ -19,13 +29,18 @@ from app.ai_providers import (
     configured_provider_order,
     stream_chat,
 )
-from app.config import Settings, get_settings
+from app.config import get_settings
+from app.core.auth import require_api_token
 from app.live_voice import router as live_voice_router
+from app.middleware.rate_limit import ApiRateLimitMiddleware
+from app.middleware.request_size import DEFAULT_API_BODY_LIMIT, RequestBodyLimitMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
 from app.personal_data import get_memory_context, require_device_token
 from app.personal_data import router as personal_data_router
 from app.personality import SYSTEM_INSTRUCTIONS, language_instruction
+from app.scheduler import ScheduleRunner
 from app.schemas import ChatRequest, ChatResponse
+from jarvis.telemetry import runtime_events
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("jarvis")
@@ -41,8 +56,14 @@ async def lifespan(app: FastAPI):
         if settings.gemini_api_key and settings.gemini_api_key != "replace_me"
         else None
     )
-    yield
-    app.state.gemini_client = None
+    schedule_runner = ScheduleRunner()
+    app.state.schedule_runner = schedule_runner
+    await schedule_runner.start()
+    try:
+        yield
+    finally:
+        await schedule_runner.stop()
+        app.state.gemini_client = None
 
 
 app = FastAPI(
@@ -51,14 +72,22 @@ app = FastAPI(
     version="0.4.0",
     lifespan=lifespan,
 )
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(personal_data_router)
 app.include_router(live_voice_router)
+# Add first so security headers and CORS still wrap early 413 responses.
+app.add_middleware(RequestBodyLimitMiddleware, max_bytes=DEFAULT_API_BODY_LIMIT)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
+)
+app.add_middleware(
+    ApiRateLimitMiddleware,
+    enabled=settings.rate_limit_enabled,
+    rate_limit=settings.rate_limit_default,
 )
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -84,13 +113,7 @@ def health() -> dict:
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest, authorization: str | None = Header(default=None)) -> ChatResponse:
-    expected_token = Settings().jarvis_api_token
-    if len(expected_token) < 32 or expected_token.startswith("replace_"):
-        raise HTTPException(status_code=503, detail="Set a random JARVIS_API_TOKEN of at least 32 characters in .env.")
-    supplied_token = authorization.removeprefix("Bearer ").strip() if authorization else ""
-    if not hmac.compare_digest(supplied_token, expected_token):
-        raise HTTPException(status_code=401, detail="Missing or invalid JARVIS device token.")
-
+    require_api_token(authorization)
     client = getattr(app.state, "gemini_client", None)
     provider_order = configured_provider_order(settings)
     if client is not None and "gemini" not in provider_order:
@@ -123,13 +146,7 @@ def chat(request: ChatRequest, authorization: str | None = Header(default=None))
 @app.post("/api/chat/stream")
 def chat_stream(request: ChatRequest, authorization: str | None = Header(default=None)):
     """Stream authenticated AI text (Gemini/OpenRouter/Groq) as server-sent events."""
-    expected_token = Settings().jarvis_api_token
-    if len(expected_token) < 32 or expected_token.startswith("replace_"):
-        raise HTTPException(status_code=503, detail="Set a random JARVIS_API_TOKEN of at least 32 characters in .env.")
-    supplied_token = authorization.removeprefix("Bearer ").strip() if authorization else ""
-    if not hmac.compare_digest(supplied_token, expected_token):
-        raise HTTPException(status_code=401, detail="Missing or invalid JARVIS device token.")
-
+    require_api_token(authorization)
     client = getattr(app.state, "gemini_client", None)
     provider_order = configured_provider_order(settings)
     if client is not None and "gemini" not in provider_order:
@@ -194,6 +211,13 @@ def performance(_=Depends(require_device_token)) -> dict:
         process_memory_mb = round(psutil.Process().memory_info().rss / (1024 ** 2), 1)
     except (psutil.Error, OSError):
         process_memory_mb = None
+    try:
+        network = psutil.net_io_counters()
+        network_bytes_sent = int(network.bytes_sent) if network else None
+        network_bytes_recv = int(network.bytes_recv) if network else None
+    except (psutil.Error, OSError, AttributeError):
+        network_bytes_sent = None
+        network_bytes_recv = None
     return {
         "cpu_percent": psutil.cpu_percent(interval=0.1),
         "memory_percent": float(vm.percent),
@@ -206,7 +230,15 @@ def performance(_=Depends(require_device_token)) -> dict:
         "platform": platform.platform(),
         "cpu_count": psutil.cpu_count(logical=True),
         "process_memory_mb": process_memory_mb,
+        "network_bytes_sent": network_bytes_sent,
+        "network_bytes_recv": network_bytes_recv,
     }
+
+
+@app.get("/api/runtime/events")
+def read_runtime_events(after_id: int = 0, limit: int = 50, _=Depends(require_device_token)) -> dict:
+    """Return bounded persisted task/provider summaries without prompts or tool arguments."""
+    return runtime_events(after_id=after_id, limit=limit)
 
 
 @app.post("/api/coach/workout")

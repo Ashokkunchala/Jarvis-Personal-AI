@@ -12,7 +12,7 @@ try {
     $healthy = ($health.status -eq "ok")
 } catch { $healthy = $false }
 if (-not $healthy) {
-    Start-Process -FilePath $pythonExe -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000") -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logs "backend.log") -RedirectStandardError (Join-Path $logs "backend-error.log") | Out-Null
+    Start-Process -FilePath $pythonExe -ArgumentList @("-m", "uvicorn", "app.main_enhanced:app", "--host", "127.0.0.1", "--port", "8000") -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logs "backend.log") -RedirectStandardError (Join-Path $logs "backend-error.log") | Out-Null
     for ($i = 0; $i -lt 40; $i++) {
         Start-Sleep -Milliseconds 750
         try {

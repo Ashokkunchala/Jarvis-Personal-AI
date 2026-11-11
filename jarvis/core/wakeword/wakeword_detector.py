@@ -1,7 +1,7 @@
-import numpy as np
 import logging
 from pathlib import Path
-import os
+
+import numpy as np
 
 logger = logging.getLogger("jarvis.wakeword")
 
@@ -24,10 +24,10 @@ class WakeWordDetector:
         self._audio_buffer = np.empty(0, dtype=np.int16)
         self._prediction_count = 0
         self.last_confidence = 0.0
-        
+
         if self.available:
             self._load_model()
-    
+
     def _load_model(self):
         try:
             # Try to load custom model or download default
@@ -44,18 +44,18 @@ class WakeWordDetector:
         except Exception as e:
             logger.error(f"Failed to load wake word model: {e}")
             self.available = False
-    
+
     def detect(self, audio_frame):
         if not self.available or self.model is None:
             return False, 0.0
-        
+
         try:
             # audio_frame should be numpy array of int16
             if audio_frame.dtype == np.float32:
                 audio_int16 = (audio_frame * 32768).astype(np.int16)
             else:
                 audio_int16 = audio_frame
-            
+
             audio_int16 = np.asarray(audio_int16, dtype=np.int16).reshape(-1)
             self._audio_buffer = np.concatenate((self._audio_buffer, audio_int16))
             # openWakeWord consumes 80 ms (1280 samples) per prediction at 16 kHz.
@@ -86,7 +86,7 @@ class WakeWordDetector:
         except Exception as e:
             logger.error(f"Wake word detection error: {e}")
             return False, 0.0
-    
+
     def reset(self):
         self._audio_buffer = np.empty(0, dtype=np.int16)
         if self.model:

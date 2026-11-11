@@ -9,12 +9,16 @@ This checklist separates repository evidence from local/device acceptance. Keep 
 - [x] CI test dependency mismatch fixed: development requirements now include pytest-asyncio and pytest-cov.
 - [x] Linux laptop-control unit tests now mock OS-specific volume, clipboard and system-status calls instead of depending on runner hardware.
 - [x] API security-header middleware is installed; automated API tests and the front-end voice-controls assertions passed in test job 121521090541 / workflow run 40307768473 (commit d284183).
-- [ ] Confirm full CI (Python, lint and Android build) on latest branch revision `a2bf5ee0d1d00b9bbc8a63b4d0bc5e6f48bce3e0`.
+- [x] Clean-room build on 2026-11-10: a fresh Python 3.13 virtual environment installed from `requirements-dev.txt`, `pip check` reported no broken requirements, and all 135 tests passed with 67% coverage. Ruff is clean after the `voice_tools.py` fixes; the idempotent Alembic baseline (`0001_initial`) upgrades and downgrades a fresh SQLite database.
+- [x] Local verification on 2026-10-31 after SQLite history/plans and API body-size limits: 127 Python tests passed; Ruff, `compileall`, `git diff --check`, and Node syntax checks for both browser voice scripts passed. Coverage was 63% overall; this is not a claim of complete branch coverage. Tests cover telemetry redaction/retention/persistence, saved-plan authentication/validation/migration/reopen/status/cancel/delete/export/reminders/history, browser controls, and 1 MiB request rejection in both HTTP apps including chunked bodies and security headers. Two warnings remain: Starlette's `httpx` deprecation notice and pytest's inability to write its cache directory.
+- [ ] Android build could not be run locally on 2026-10-31: `java`, `gradle`, and `adb` are not available on PATH; rely on the current-branch CI Android job when available, then verify on a physical device.
+- [ ] Confirm full CI (Python, lint and Android build) for the current branch and working-tree changes.
 - [ ] Install on a clean Windows machine; verify local setup, startup, stop, and recovery.
 - [ ] Verify Gemini calls with the owner's real key and check the account's current model/quota availability.
-- [ ] Install the latest debug APK on a physical Android 14 device; verify HTTPS chat, speech input/output, and token persistence after process restart.
+- [ ] Install the latest debug APK on a physical Android 14 device; verify HTTPS chat, master-token pairing, encrypted device-token persistence, revoke/forget behavior, speech input/output, and token persistence after process restart.
+- [ ] Verify Android Live Voice microphone permission, one-time ticket connection, audio input/output, interruption, and cleanup on device.
 - [ ] Complete threat-model and security review before public deployment.
-- [ ] Implement and verify a true end-to-end, low-latency full-duplex voice session. The current browser flow is transcript-first browser recognition plus local TTS; it is not full-duplex voice.
+- [ ] Verify a true end-to-end, low-latency full-duplex voice session on supported hardware. Browser Live Voice is implemented, but provider availability, microphone, playback, interruption, and Android device behavior still need live testing.
 
 ## Required release gates
 

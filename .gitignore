@@ -4,9 +4,15 @@ venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest-tmp/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 data/
+logs/
+jarvis.log
+.tmp-pytest-recurrence/
 *.sqlite
 *.sqlite3
 *.db

@@ -36,7 +36,7 @@ There are two independent terminal clients. The default one needs **any one** of
 .\.venv\Scripts\python.exe jarvis_cli.py laptop status
 .\.venv\Scripts\python.exe jarvis_cli.py android devices
 
-# List the 135 registered tools by category.
+# List the 137 registered tools by category.
 .\.venv\Scripts\python.exe jarvis_cli.py tools
 ```
 
@@ -62,7 +62,7 @@ There are two independent terminal clients. The default one needs **any one** of
 ### Personal-assistant core (`jarvis/`)
 
 - **Local Gemini tool-calling brain** (`jarvis/core/brain.py`): streams replies, dispatches to registered tools, retries with a model fallback chain, and enforces per-tool confirmation. Shared by the TUI and the WebSocket endpoint.
-- **Tool registry** (`jarvis/tools/`): 135 typed tools across 20 categories (system, apps, audio, window, power, screen, input, files, process, clipboard, network, shell, notify, and six `android_*` groups) with JSON schemas for Gemini function-calling and schema validation.
+- **Tool registry** (`jarvis/tools/`): 137 typed tools across 20 categories (system, apps, audio, window, power, screen, input, files, process, clipboard, network, shell, notify, and six `android_*` groups) with JSON schemas for Gemini function-calling and schema validation.
 - **Laptop control** (`jarvis/control/`): apps, audio, windows, power, screen capture, input, files, processes, clipboard, network, guarded shell, notifications, hardware info.
 - **Android control over ADB** (`jarvis/android_bridge/`): device state, apps, input, screen, files, SMS/calls/contacts, notifications, settings, location, wireless debugging, plus automatic ADB provisioning (`jarvis android setup`).
 - **Realtime terminal UI** (`jarvis/terminal/jarvis_tui.py`): streaming text, live tool log, status bar, confirmation dialogs, slash commands.
@@ -75,25 +75,25 @@ There are two independent terminal clients. The default one needs **any one** of
 - Adaptive personality instructions and English/Telugu response preference.
 - Browser speech input (only when manually activated and supported) and browser text-to-speech.
 - Optional browser-local conversation history and local checklist.
-- SQLite-backed, token-protected APIs to create/list/edit/delete explicit memories, export personal data, create/list/complete reminders, and log/delete workouts.
+- SQLite-backed, token-protected APIs to create/list/edit/delete explicit memories, export personal data, create/list/complete reminders, manage saved checklist plans, schedule opt-in read-only system checks, and log/delete workouts.
 - Token-protected AI workout and general nutrition suggestion endpoints.
 - Token-protected user-triggered web search with source links.
 - Experimental Windows agent integrated with the local dashboard: authenticated status and user-confirmed HTTPS URL opening for allow-listed domains.
 - Optional Windows toast reminder worker that polls the local backend while its process is running.
-- Native Kotlin/Jetpack Compose Android client with HTTPS health check, Android Keystore token storage, authenticated chat, tap-to-speak voice input, spoken replies, and English/Telugu/adaptive language selection. Personal-data screens and device pairing/revocation remain pending.
+- Native Kotlin/Jetpack Compose Android client with HTTPS health check, master-token-backed device pairing and confirmed revocation, Android Keystore-encrypted device token/backend URL/device ID, authenticated chat, user-started full-duplex Live Voice, tap-to-speak fallback, explicit memory review/save/delete, recurring reminders, and opt-in WorkManager notifications. Pairing and Android changes still need build and physical-device verification.
 - Python API tests and GitHub Actions test/build workflows.
 
 ## Major gaps
 
-- The Android app can send authenticated chat requests over HTTPS, supports tap-to-speak/spoken replies, and encrypts the token with Android Keystore. It is not yet integrated with the personal-data APIs or per-device pairing/revocation.
+- The Android app can pair a per-device token using the master token, revoke that token after confirmation, send authenticated requests over HTTPS, and encrypt the device token/backend URL/device ID with Android Keystore. Its latest changes still need an Android build and physical-device verification.
 - The Windows companion agent (`windows_agent/`) remains restricted to allow-listed HTTPS URL opening. The Python laptop-control suite (`jarvis/control/`) is broader by design and guards destructive paths, critical processes, and blocked shell patterns.
 - Android control requires a physical device with USB debugging (or wireless debugging); ADB is provisioned on demand, and most actions have only been exercised in degraded "no device connected" mode here.
 - Shell execution is allow/confirm/deny classified, not sandboxed; the model cannot run blocked patterns, but a confirmed command runs with your full user rights.
-- Reminder notification delivery is an experimental Windows polling worker, not a reliable alarm service. There is no Android push notification or recurrence yet.
+- Reminder notification delivery is experimental: Windows uses a local toast worker and Android uses opt-in WorkManager polling with a 15-minute minimum interval. Neither is a guaranteed alarm. Recurrence advances when the user completes an occurrence.
 - Memories are explicitly entered via API; there is no consent-driven extraction or review UI.
 - Web research is a small HTML search adapter, not full browser automation or authenticated website workflows.
 - Workout/nutrition endpoints give general AI suggestions; no wearable integration, progress charts, or medical service exists.
-- No secure cloud deployment, TLS termination, per-device credentials/revocation, or complete authentication for every route.
+- No secure cloud deployment, TLS termination, multi-user authorization, distributed rate limits, or complete authentication for every route. The CLI backend supports per-device tokens and revocation, but this is not production-ready authentication.
 
 ## Quick start — Windows PowerShell
 

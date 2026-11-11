@@ -7,8 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # AI providers (Gemini for text + live voice; OpenRouter/Groq for text)
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
-    gemini_model_fallback: str = "gemini-1.5-flash"
+    gemini_model: str = "gemini-3.5-flash"
+    gemini_model_fallback: str = "gemini-3.1-flash-lite,gemini-3.6-flash,gemini-3.7-flash"
     gemini_live_model: str = "gemini-3.8-live"
     gemini_live_voice: str = "Charon"
     openrouter_api_key: str = ""

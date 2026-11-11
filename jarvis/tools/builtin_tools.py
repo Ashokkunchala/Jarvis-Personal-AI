@@ -38,15 +38,47 @@ def get_android():
 
 
 def _open_app_and_type(app_name: str, text: str, wait_seconds: float = 1.5) -> dict[str, Any]:
-    """Launch/focus an app and type text into its active window; never submits it."""
+    """Launch an app and type only after verifying its foreground window."""
     if not text:
         return {"success": False, "error": "No text supplied; nothing was typed."}
-    launch_result = get_laptop().open_app(app_name)
+    from jarvis.control import input_ctl
+
+    if not input_ctl.is_available():
+        return {"success": False, "stage": "automation", "error": "Keyboard automation is unavailable; nothing was typed."}
+    laptop = get_laptop()
+    launch_result = laptop.open_app(app_name)
     if not isinstance(launch_result, dict) or not launch_result.get("success", False):
         return {"success": False, "stage": "launch", "result": launch_result}
     # Give Windows time to create and focus the new application window.
     time.sleep(max(0.5, min(float(wait_seconds), 5.0)))
-    type_result = get_laptop().type_text(text)
+    active = laptop.get_active_window()
+    if not isinstance(active, dict) or not active.get("success", False):
+        return {"success": False, "stage": "focus", "launched": launch_result,
+                "active_window": active, "error": "Could not verify the foreground window; nothing was typed."}
+
+    # Prefer the process id returned by launch. Some launchers hand off to an
+    # existing process, so also accept the resolved executable name.
+    expected_pid = launch_result.get("pid")
+    active_pid = active.get("pid")
+    expected_name = app_name.strip().lower()
+    try:
+        from jarvis.control.apps import APP_ALIASES
+
+        expected_name = APP_ALIASES.get(expected_name, expected_name)
+    except Exception:
+        pass
+    expected_name = expected_name.rsplit("\\", 1)[-1].rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+    active_name = str(active.get("process_name") or "").rsplit("\\", 1)[-1].rsplit(".", 1)[0].lower()
+    try:
+        same_pid = expected_pid is not None and active_pid is not None and int(expected_pid) == int(active_pid)
+    except (TypeError, ValueError):
+        same_pid = False
+    same_process = bool(expected_name and active_name and expected_name == active_name)
+    if not (same_pid or same_process):
+        return {"success": False, "stage": "focus", "launched": launch_result,
+                "active_window": active, "error": "Target application is not verified in the foreground; nothing was typed."}
+
+    type_result = laptop.type_text(text)
     if not isinstance(type_result, dict) or not type_result.get("success", False):
         return {
             "success": False,
@@ -570,6 +602,8 @@ def _register_input(r: ToolRegistry) -> None:
 
 # ------------------------------------------------------------------- files
 def _register_files(r: ToolRegistry) -> None:
+    from jarvis.control import files as file_control
+
     r.register(Tool(
         name="list_directory",
         description="List the contents of a folder (default: current directory).",
@@ -607,33 +641,44 @@ def _register_files(r: ToolRegistry) -> None:
         ),
         handler=lambda path, content, append=False: get_laptop().write_file(path, content, append),
         risk=Risk.MEDIUM, category="files", requires_confirmation=True,
+        confirmation_preview=file_control.preview_write, allow_always=False, allow_auto_approve=False,
     ))
     r.register(Tool(
         name="copy_file",
-        description="Copy a file or folder to a destination path.",
+        description="Preview and copy a file or folder to a destination. Existing destination contents require overwrite=true and explicit confirmation.",
         parameters=_obj(
             {"source": _str("Source path."), "destination": _str("Destination path."), "overwrite": _bool("Overwrite existing.")},
             ["source", "destination"],
         ),
         handler=lambda source, destination, overwrite=False: get_laptop().copy_path(source, destination, overwrite),
-        risk=Risk.MEDIUM, category="files",
+        risk=Risk.MEDIUM, category="files", requires_confirmation=True,
+        confirmation_preview=file_control.preview_copy, allow_always=False, allow_auto_approve=False,
     ))
     r.register(Tool(
         name="move_file",
-        description="Move/rename a file or folder.",
-        parameters=_obj({"source": _str("Source path."), "destination": _str("Destination path.")}, ["source", "destination"]),
-        handler=lambda source, destination: get_laptop().move_path(source, destination),
-        risk=Risk.MEDIUM, category="files",
+        description="Preview and move/rename a file or folder. Existing destination files require overwrite=true and explicit confirmation.",
+        parameters=_obj(
+            {
+                "source": _str("Source path."),
+                "destination": _str("Destination path."),
+                "overwrite": _bool("Overwrite an existing file at the destination."),
+            },
+            ["source", "destination"],
+        ),
+        handler=lambda source, destination, overwrite=False: get_laptop().move_path(source, destination, overwrite),
+        risk=Risk.MEDIUM, category="files", requires_confirmation=True,
+        confirmation_preview=file_control.preview_move, allow_always=False, allow_auto_approve=False,
     ))
     r.register(Tool(
         name="delete_file",
-        description="Delete a file or folder (Recycle Bin by default; permanent when requested).",
+        description="Preview and delete a file or folder. Recycle Bin is the default; permanent deletion requires explicit permanent=true and confirmation.",
         parameters=_obj(
             {"path": _str("Path to delete."), "permanent": _bool("Skip the Recycle Bin.")},
             ["path"],
         ),
         handler=lambda path, permanent=False: get_laptop().delete_path(path, permanent),
         risk=Risk.HIGH, category="files", requires_confirmation=True,
+        confirmation_preview=file_control.preview_delete, allow_always=False, allow_auto_approve=False,
     ))
     r.register(Tool(
         name="create_folder",
@@ -662,6 +707,7 @@ def _register_files(r: ToolRegistry) -> None:
         parameters=_obj({"path": _str("Folder to organise.")}, ["path"]),
         handler=lambda path: get_laptop().organize_folder(path),
         risk=Risk.MEDIUM, category="files", requires_confirmation=True,
+        confirmation_preview=file_control.preview_organize, allow_always=False, allow_auto_approve=False,
     ))
 
 

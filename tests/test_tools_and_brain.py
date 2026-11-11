@@ -42,6 +42,52 @@ def test_direct_desktop_action_tools_are_registered(registry: ToolRegistry) -> N
     assert "never presses Enter" in open_and_type.description
 
 
+def test_open_app_and_type_checks_focus_and_reports_failures(monkeypatch) -> None:
+    from jarvis.control import input_ctl
+    from jarvis.tools import builtin_tools
+
+    class FakeLaptop:
+        def __init__(self, active):
+            self.active = active
+            self.typed = []
+            self.launched = []
+
+        def open_app(self, name):
+            self.launched.append(name)
+            return {"success": True, "pid": 42}
+
+        def get_active_window(self):
+            return self.active
+
+        def type_text(self, text):
+            self.typed.append(text)
+            return {"success": True, "typed_chars": len(text)}
+
+    monkeypatch.setattr(builtin_tools.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(input_ctl, "is_available", lambda: True)
+    focused = FakeLaptop({"success": True, "pid": 42, "process_name": "notepad.exe"})
+    monkeypatch.setattr(builtin_tools, "get_laptop", lambda: focused)
+    result = builtin_tools._open_app_and_type("notepad", "draft")
+    assert result["success"] is True
+    assert focused.typed == ["draft"]
+    assert result["submitted"] is False
+
+    wrong_focus = FakeLaptop({"success": True, "pid": 7, "process_name": "chrome.exe"})
+    monkeypatch.setattr(builtin_tools, "get_laptop", lambda: wrong_focus)
+    result = builtin_tools._open_app_and_type("notepad", "draft")
+    assert result["success"] is False
+    assert result["stage"] == "focus"
+    assert wrong_focus.typed == []
+
+    unavailable = FakeLaptop({"success": True, "pid": 42, "process_name": "notepad.exe"})
+    monkeypatch.setattr(builtin_tools, "get_laptop", lambda: unavailable)
+    monkeypatch.setattr(input_ctl, "is_available", lambda: False)
+    result = builtin_tools._open_app_and_type("notepad", "draft")
+    assert result["success"] is False
+    assert result["stage"] == "automation"
+    assert unavailable.launched == []
+
+
 def test_registry_lookup_helpers(registry: ToolRegistry) -> None:
     assert "battery_status" in registry.names("system")
     assert registry.get("battery_status") is not None
@@ -53,6 +99,82 @@ def test_risky_tools_require_confirmation(registry: ToolRegistry) -> None:
     if risky is None:
         pytest.skip("shutdown_pc not registered")
     assert risky.confirm_required or risky.risk >= Risk.HIGH
+
+
+def test_file_mutation_tools_require_confirmation(registry: ToolRegistry) -> None:
+    for name in ("write_file", "copy_file", "move_file", "delete_file", "organize_folder"):
+        tool = registry.get(name)
+        assert tool is not None
+        assert tool.confirm_required, f"{name} must ask before changing files"
+        assert tool.confirmation_preview is not None, f"{name} must show impact before confirmation"
+        assert not tool.allow_always, f"{name} must not bypass point-of-action confirmation"
+        assert not tool.allow_auto_approve, f"{name} must not bypass explicit confirmation"
+
+
+def test_copy_preview_is_shown_before_confirmation_and_cancel_prevents_copy(
+    registry: ToolRegistry, tmp_path
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "one.txt").write_text("one", encoding="utf-8")
+    (source / "two.txt").write_text("two", encoding="utf-8")
+    destination = tmp_path / "destination"
+    seen: list[dict] = []
+
+    async def reject(_tool, args) -> bool:
+        seen.append(args)
+        return False
+
+    result = asyncio.run(
+        registry.execute(
+            "copy_file",
+            {"source": str(source), "destination": str(destination)},
+            confirm=reject,
+        )
+    )
+
+    assert result.cancelled is True
+    assert len(seen) == 1
+    assert seen[0]["source"] == str(source)
+    assert seen[0]["destination"] == str(destination)
+    assert seen[0]["_preview"]["estimated_affected_items"] == 3
+    assert seen[0]["_preview"]["estimated_bytes"] == 6
+    assert not destination.exists()
+
+
+def test_file_mutation_fails_closed_without_a_confirmation_handler(
+    registry: ToolRegistry, tmp_path
+) -> None:
+    target = tmp_path / "must-remain.txt"
+    target.write_text("keep", encoding="utf-8")
+
+    result = asyncio.run(
+        registry.execute("delete_file", {"path": str(target)}, confirm=None)
+    )
+
+    assert result.ok is False
+    assert "no confirmation handler" in (result.error or "").lower()
+    assert target.read_text(encoding="utf-8") == "keep"
+
+
+def test_file_mutation_does_not_accept_global_auto_approve(
+    registry: ToolRegistry, tmp_path
+) -> None:
+    target = tmp_path / "must-remain.txt"
+    target.write_text("keep", encoding="utf-8")
+
+    result = asyncio.run(
+        registry.execute(
+            "delete_file",
+            {"path": str(target)},
+            confirm=None,
+            auto_approve=True,
+        )
+    )
+
+    assert result.ok is False
+    assert "no confirmation handler" in (result.error or "").lower()
+    assert target.read_text(encoding="utf-8") == "keep"
 
 
 def test_rejected_confirmation_blocks_the_tool(registry: ToolRegistry) -> None:

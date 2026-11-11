@@ -61,7 +61,7 @@ GEMINI_API_KEY=your_real_key_here
 OPENROUTER_API_KEY=your_real_key_here
 GROQ_API_KEY=your_real_key_here
 JARVIS_AI_PROVIDER=auto
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.5-flash
 HOST=127.0.0.1
 PORT=8000
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
@@ -124,4 +124,4 @@ With the backend running, verify your real Gemini key with the one-request smoke
 - **Telugu voice unavailable:** the model can return Telugu text, but local spoken output depends on installed browser/OS voices.
 
 ## Safety
-The starter is deliberately bound to localhost. Do not bind it to `0.0.0.0`, port-forward it, or expose it via a public tunnel. Personal-data APIs require a bearer token, but the chat endpoint is still unauthenticated. Keep all routes local; do not expose this prototype to the internet.
+The starter is deliberately bound to localhost. Do not bind it to `0.0.0.0`, port-forward it, or expose it via a public tunnel. Chat and personal-data APIs require the configured bearer token. Keep all routes local; do not expose this prototype to the internet.

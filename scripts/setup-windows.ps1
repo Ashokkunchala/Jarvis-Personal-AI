@@ -37,7 +37,7 @@ if (-not (Test-Path ".env")) {
 
 Write-Host ""
 Write-Host "Setup complete. Start the app with:" -ForegroundColor Green
-Write-Host "  .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
+Write-Host "  .\.venv\Scripts\python.exe -m uvicorn app.main_enhanced:app --host 127.0.0.1 --port 8000"
 Write-Host ""
 Write-Host "Then open http://127.0.0.1:8000"
 Write-Host "Keep the host as 127.0.0.1. Do not expose this starter publicly without authentication and a security review."

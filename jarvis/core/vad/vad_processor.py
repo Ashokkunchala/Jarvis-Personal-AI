@@ -1,7 +1,8 @@
-import webrtcvad
-import numpy as np
 import collections
 import logging
+
+import numpy as np
+import webrtcvad
 
 logger = logging.getLogger("jarvis.vad")
 
@@ -17,7 +18,7 @@ class VADProcessor:
         self.ring_buffer = collections.deque(maxlen=self.num_padding_frames)
         self.triggered = False
         self.voiced_frames = []
-        
+
     def is_speech(self, frame):
         """Check if frame contains speech"""
         try:
@@ -30,11 +31,11 @@ class VADProcessor:
         except Exception as e:
             logger.error(f"VAD error: {e}")
             return False
-    
+
     def process_frame(self, frame):
         """Process frame and return (is_speech, utterance_complete, utterance_audio)"""
         is_speech = self.is_speech(frame)
-        
+
         if not self.triggered:
             self.ring_buffer.append((frame, is_speech))
             num_voiced = len([f for f, speech in self.ring_buffer if speech])
@@ -58,7 +59,7 @@ class VADProcessor:
                 self.ring_buffer.clear()
                 return True, True, utterance
             return True, False, None
-    
+
     def reset(self):
         self.triggered = False
         self.voiced_frames = []

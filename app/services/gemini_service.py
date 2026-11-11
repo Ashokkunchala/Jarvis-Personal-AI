@@ -1,6 +1,7 @@
-import logging
 import asyncio
-from typing import Optional, List, Dict, Any
+import logging
+from typing import Any
+
 from google import genai
 from google.genai import types
 
@@ -14,7 +15,7 @@ class GeminiService:
         self.settings = get_settings()
         self.client = None
         self._init_client()
-    
+
     def _init_client(self):
         if self.settings.gemini_api_key and self.settings.gemini_api_key != "replace_me":
             try:
@@ -25,21 +26,21 @@ class GeminiService:
                 self.client = None
         else:
             self.client = None
-    
+
     def is_configured(self) -> bool:
         return self.client is not None
-    
+
     async def generate_content(
         self,
-        contents: List[Dict[str, Any]],
+        contents: list[dict[str, Any]],
         system_instruction: str = "",
         temperature: float = 0.8,
         max_retries: int = 3,
         timeout: int = 60,
-    ) -> Optional[str]:
+    ) -> str | None:
         if not self.client:
             raise RuntimeError("Gemini client not configured")
-        
+
         model = self.settings.gemini_model
         for attempt in range(max_retries):
             try:
@@ -59,7 +60,7 @@ class GeminiService:
                 if text:
                     return text
                 logger.warning(f"Empty response from Gemini (attempt {attempt + 1})")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(f"Gemini timeout (attempt {attempt + 1})")
                 if attempt == max_retries - 1:
                     raise
@@ -87,9 +88,9 @@ class GeminiService:
                             logger.error(f"Fallback model also failed: {e2}")
                     raise
                 await asyncio.sleep(2 ** attempt)  # Exponential backoff
-        
+
         return None
-    
+
     def generate_content_stream(self, *args, **kwargs):
         if not self.client:
             raise RuntimeError("Gemini client not configured")

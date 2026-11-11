@@ -41,10 +41,10 @@ function New-Secret {
     return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
 }
 
-Write-Section "JARVIS Personal AI — setup and validation"
+Write-Section "JARVIS Personal AI - setup and validation"
 Write-Host "Repository: $RepoRoot"
-if (!(Test-Path (Join-Path $RepoRoot "app\main.py")) -or !(Test-Path (Join-Path $RepoRoot "requirements-dev.txt"))) {
-    throw "Run this script from the Jarvis-Personal-AI repository root. Expected app\main.py and requirements-dev.txt."
+if (!(Test-Path (Join-Path $RepoRoot "app\main_enhanced.py")) -or !(Test-Path (Join-Path $RepoRoot "requirements-dev.txt"))) {
+    throw "Run this script from the Jarvis-Personal-AI repository root. Expected app\main_enhanced.py and requirements-dev.txt."
 }
 if (!(Test-Path (Join-Path $RepoRoot "scripts\start-windows.ps1"))) {
     throw "scripts\start-windows.ps1 is missing from this checkout."
@@ -162,6 +162,7 @@ Pass ".env saved; secret values were not printed"
 Write-Section "Static and feature-presence checks"
 $requiredPaths = @(
     "app\main.py",
+    "app\main_enhanced.py",
     "app\live_voice.py",
     "jarvis_cli.py",
     "scripts\setup-windows.ps1",

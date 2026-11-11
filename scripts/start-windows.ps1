@@ -8,4 +8,4 @@ if (-not (Test-Path ".env")) {
     Write-Host ".env not found. Run setup and add your Gemini API key." -ForegroundColor Yellow
     exit 1
 }
-& $pythonExe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+& $pythonExe -m uvicorn app.main_enhanced:app --host 127.0.0.1 --port 8000
