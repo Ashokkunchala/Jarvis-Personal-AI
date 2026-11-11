@@ -68,6 +68,12 @@ def home():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/static/live_voice.js", include_in_schema=False)
+def live_voice_client():
+    """The live voice client script that index.html loads."""
+    return FileResponse(STATIC_DIR / "live_voice.js", media_type="application/javascript")
+
+
 @app.get("/dashboard", include_in_schema=False)
 def dashboard():
     return FileResponse(STATIC_DIR / "dashboard.html")
