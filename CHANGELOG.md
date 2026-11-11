@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Fixed the page script, found by running it in a real headless Chrome: `index.html` called `$("voiceStop").addEventListener`, but no element had that id, so the inline script threw during load and the live voice Stop/Interrupt controls never worked. Added the missing button and a test that every id the scripts look up exists in the page.
+- Fixed `/static/live_voice.js` returning 404 (nothing served it), so the live voice client never loaded. Both `app.main` and `app.main_enhanced` now serve it. `app.main_enhanced` (used by the Dockerfile and `run_enhanced.py`) did not include the live voice router at all; it does now.
+- Removed a stray literal `\n` shown on the page. The approval prompt now sits under the live voice status line.
 - Live voice can ask to create a reminder (`create_reminder`). The server holds the call and sends an `approval_request`; the browser shows Approve/Deny. Only an exact `approve: true` for the matching request id runs it. Deny, a wrong id, a 60 s timeout (`JARVIS_LIVE_APPROVAL_TIMEOUT_SECONDS`), a disconnect, or bad arguments all leave data unchanged. One approval can wait at a time. Tested with a fake session and the client source; not run against the real Live API or a real browser.
 - Browser playback queue is capped at 20 s ahead so audio cannot build up lag on a slow device.
 - Live voice can now call three read-only tools (current time, open reminders, saved memories). Calls are run server-side, restricted to an allow-list, and anything else is refused. Voice cannot add or change reminders, memories, files or devices. The tool-call wiring was written against the installed google-genai types and tested with a fake session; it has not been run against the real Live API.
