@@ -29,11 +29,17 @@
     for(let i=0;i<samples.length;i++){const x=Math.max(-1,Math.min(1,samples[i]));pcm[i]=x<0?Math.round(x*32768):Math.round(x*32767);}
     return new Uint8Array(pcm.buffer);
   };
+  // After a manual interrupt the server may still have audio of the old reply in
+  // flight. Drop it until that turn ends (turn_complete or interrupted), or 5 s pass.
+  let dropAudioUntilTurnEnd=false,dropTimer=null;
+  const dropStaleAudio=()=>{dropAudioUntilTurnEnd=true;clearTimeout(dropTimer);dropTimer=setTimeout(()=>{dropAudioUntilTurnEnd=false;},5000);};
+  const endStaleAudioWindow=()=>{dropAudioUntilTurnEnd=false;clearTimeout(dropTimer);};
   const stopPlayback=()=>{
     for(const node of outputNodes){try{node.stop();}catch(_){}}
     outputNodes.clear();if(outputContext)outputNextTime=outputContext.currentTime;
   };
   async function playAudio(encoded){
+    if(dropAudioUntilTurnEnd)return;
     if(!outputContext)outputContext=new AudioContext();
     if(outputContext.state==="suspended")await outputContext.resume();
     const bytes=fromBase64(encoded);if(!bytes.length||bytes.length%2)return;
@@ -77,8 +83,8 @@
       case "audio":try{await playAudio(m.data);}catch(e){status("Audio playback failed: "+e.message,true);}break;
       case "text":showTranscript("assistant",m.text);break;
       case "transcript":showTranscript(m.source,m.text);break;
-      case "turn_complete":status("Reply complete · live session remains open.");setUi("listening","Ready for your next utterance.");break;
-      case "interrupted":stopPlayback();status("JARVIS audio interrupted.");setUi("listening","Listening for your next instruction.");break;
+      case "turn_complete":endStaleAudioWindow();status("Reply complete · live session remains open.");setUi("listening","Ready for your next utterance.");break;
+      case "interrupted":endStaleAudioWindow();stopPlayback();status("JARVIS audio interrupted.");setUi("listening","Listening for your next instruction.");break;
       case "tool":status("Tool "+String(m.name)+(m.ok?" finished.":" did not run."),!m.ok);break;
       case "approval_request":showApproval(m);break;
       case "error":status(m.message||"Live voice error.",true);break;
@@ -100,7 +106,7 @@
     active=true;setUi("listening","Microphone is on. Audio is streaming to your JARVIS server.");status("Live microphone active. Select Stop Live Voice to disconnect.");
   }
   function releaseCapture(sendEnd=true){
-    active=false;clearApproval();
+    active=false;clearApproval();endStaleAudioWindow();
     if(processor){processor.onaudioprocess=null;try{processor.disconnect();}catch(_){}processor=null;}
     if(source){try{source.disconnect();}catch(_){}source=null;}
     if(silentGain){try{silentGain.disconnect();}catch(_){}silentGain=null;}
@@ -136,6 +142,6 @@
   }
   $("liveVoiceConnect").addEventListener("click",()=>{connect().catch(e=>status(e.message,true));});
   $("liveVoiceStop").addEventListener("click",()=>{releaseCapture();if(socket&&socket.readyState===WebSocket.OPEN)socket.close(1000,"user stopped live voice");});
-  $("liveVoiceInterrupt").addEventListener("click",()=>{stopPlayback();send({type:"stop"});status("Playback interrupted. Speak your next instruction.");setUi("listening","JARVIS response interrupted.");});
+  $("liveVoiceInterrupt").addEventListener("click",()=>{dropStaleAudio();stopPlayback();send({type:"stop"});status("Playback interrupted. Speak your next instruction.");setUi("listening","JARVIS response interrupted.");});
   window.addEventListener("pagehide",()=>{releaseCapture(false);if(socket){socket.close(1000,"page closed");socket=null;}if(outputContext)outputContext.close().catch(()=>{});});
 })();
