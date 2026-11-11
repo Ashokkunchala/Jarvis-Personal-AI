@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-\"\"\"Run the enhanced JARVIS server.\"\"\"
+"""Run the enhanced JARVIS server."""
 import uvicorn
 from app.core.config import get_settings
 
