@@ -337,3 +337,14 @@ def test_client_drops_stale_audio_after_manual_interrupt():
     assert "if(dropAudioUntilTurnEnd)return;" in js
     assert 'liveVoiceInterrupt").addEventListener("click",()=>{dropStaleAudio();' in js
     assert js.count("endStaleAudioWindow()") >= 3  # turn_complete, interrupted, stop
+
+
+def test_client_approval_prompt_is_pinned_on_narrow_screens_and_counts_down():
+    from pathlib import Path
+    static = Path(lv.__file__).parent / "static"
+    js = (static / "live_voice.js").read_text(encoding="utf-8")
+    html = (static / "index.html").read_text(encoding="utf-8")
+    for needle in ("has-approval", "Auto-denies in", "preventScroll", 'textContent="Stop voice"'):
+        assert needle in js
+    assert "[role=alertdialog]{position:fixed" in html and "body.has-approval" in html
+    assert "backdrop-filter" not in html  # it would turn position:fixed into position:absolute
