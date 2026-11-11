@@ -329,3 +329,11 @@ def test_client_has_approval_prompt_that_denies_by_default():
     for needle in ('case "approval_request"', 'type:"approval"', "approve:approve===true", "textContent"):
         assert needle in js
     assert "innerHTML" not in js
+
+
+def test_client_drops_stale_audio_after_manual_interrupt():
+    from pathlib import Path
+    js = (Path(lv.__file__).parent / "static" / "live_voice.js").read_text(encoding="utf-8")
+    assert "if(dropAudioUntilTurnEnd)return;" in js
+    assert 'liveVoiceInterrupt").addEventListener("click",()=>{dropStaleAudio();' in js
+    assert js.count("endStaleAudioWindow()") >= 4  # turn_complete, interrupted, stop, definition
