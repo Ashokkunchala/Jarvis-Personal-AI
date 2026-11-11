@@ -113,3 +113,17 @@ Automated tests do not prove the microphone works on your specific laptop. Verif
 ## Safety notes
 
 The direct terminal can execute laptop actions through its tool registry. Keep confirmation prompts enabled for risky actions; do not pre-approve tools you do not trust. The local web backend should remain bound to localhost and must not be exposed to the public internet without a security review.
+
+## Cinematic terminal (`jarvis tui`)
+
+Run `jarvis tui` in an interactive terminal (a truecolor terminal looks best).
+Keys: Enter send, F1 help, F2 focus input, F3 show/hide side panels, F4 stop the
+current turn, Ctrl+L clear, Ctrl+Q quit. Risky tools still open an approval
+dialog (y approve, n or Esc reject); rejecting is the default outcome.
+
+- Panels show real state only. Values that are not measured appear as dashes,
+  and the AWS DevOps panel only reports which CLIs are on PATH. It does not read
+  credentials or call AWS.
+- Small terminals (under 110 columns or 32 rows) hide side panels and the core.
+- `NO_COLOR`, `TERM=dumb` or `JARVIS_TUI_SIMPLE=1` turns off the animation.
+- Not an interactive terminal: use `jarvis ask` instead.
