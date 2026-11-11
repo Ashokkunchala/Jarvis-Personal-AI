@@ -188,8 +188,15 @@ def ask(
             break
 
 
+async def _cli_confirm(tool, args) -> bool:
+    """Ask on the terminal before a tool that needs approval runs."""
+    console.print(f"[yellow]JARVIS wants to run[/yellow] [bold]{tool.name}[/bold] ({tool.risk.name} risk)")
+    console.print(f"[dim]{args}[/dim]")
+    return typer.confirm("Allow?", default=False)
+
+
 async def _stream_reply(brain, prompt: str, buffer: list[str]) -> None:
-    async for event in brain.ask(prompt):
+    async for event in brain.ask(prompt, confirm=_cli_confirm):
         kind = event["type"]
         if kind == "text_delta":
             text = event["text"]
