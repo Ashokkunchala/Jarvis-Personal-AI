@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Live voice session guardrails: maximum session length (default 900 s), idle timeout (120 s, pings do not count), per-minute audio volume cap (1.5x real time) and a concurrent-session cap (2). Override with `JARVIS_LIVE_MAX_SESSION_SECONDS`, `JARVIS_LIVE_IDLE_TIMEOUT_SECONDS`, `JARVIS_LIVE_MAX_AUDIO_BYTES_PER_MINUTE`, `JARVIS_LIVE_MAX_CONCURRENT_SESSIONS`.
+- Added WebSocket flow tests for live voice against a fake Gemini client (ticket rejection, event forwarding, bad frames, rate limit, idle timeout, session cap). These do not prove behaviour with the real Live API or a microphone.
 - Fixed `jarvis_daemon.py` and `run_enhanced.py`, which had escaped triple quotes and failed with SyntaxError.
 - Tools that need approval now fail closed: with no confirmation callback they do not run. CLI chat now asks on the terminal before running them.
 - Shell classifier no longer treats chained, piped, redirected or substituted commands as safe.
