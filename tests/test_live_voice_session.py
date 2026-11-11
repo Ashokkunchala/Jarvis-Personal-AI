@@ -186,7 +186,7 @@ def test_voice_tools_are_read_only_and_allow_listed(monkeypatch, tmp_path):
     assert live_tools.execute("get_current_time", {})["success"]
     assert live_tools.execute("list_reminders", {"limit": "bogus"})["reminders"] == []
     assert live_tools.execute("list_memories", None)["memories"] == []
-    for name in ("run_shell", "delete_memory", "add_reminder", "aws_change"):
+    for name in ("run_shell", "delete_memory", "add_reminder", "aws_change", "create_reminder"):
         assert live_tools.execute(name, {})["success"] is False
     assert {"get_current_time", "list_reminders", "list_memories"} == live_tools.TOOL_NAMES
 
@@ -233,3 +233,99 @@ def test_ws_executes_only_allow_listed_tools(fake_live, monkeypatch):
     assert second == {"type": "tool", "name": "run_shell", "ok": False}
     outputs = [s["tool_response"][0].response["output"] for s in sent if "tool_response" in s]
     assert outputs[0]["success"] is True and outputs[1]["success"] is False
+
+
+# ----------------------------------------------------------------- approval-gated voice tool
+def _approval_connect(monkeypatch, sent, args):
+    class S(ToolCallSession):
+        async def receive(self):
+            fc = SimpleNamespace(id="a1", name="create_reminder", args=args)
+            yield SimpleNamespace(tool_call=SimpleNamespace(function_calls=[fc]), server_content=None)
+            await asyncio.sleep(3600)
+
+    class C(FakeConnect):
+        async def __aenter__(self):
+            return S(self.sent)
+
+    fake_client = SimpleNamespace(aio=SimpleNamespace(live=SimpleNamespace(connect=lambda **kw: C(sent))))
+    monkeypatch.setattr(lv.genai, "Client", lambda api_key: fake_client)
+
+
+def _reminders(tmp_path):
+    from app.personal_data import _connect as db_connect
+    with db_connect() as db:
+        return [r["title"] for r in db.execute("SELECT title FROM reminders").fetchall()]
+
+
+GOOD = {"title": "call mom", "due_at": "2026-11-12T09:00:00+05:30"}
+
+
+def test_voice_write_runs_only_after_explicit_approval(fake_live, monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_DB_PATH", str(tmp_path / "t.sqlite3"))
+    client, sent = fake_live
+    _approval_connect(monkeypatch, sent, GOOD)
+    with _connect(client) as ws:
+        assert ws.receive_json()["type"] == "ready"
+        req = ws.receive_json()
+        assert req["type"] == "approval_request" and "call mom" in req["summary"]
+        assert _reminders(tmp_path) == []  # nothing happens before approval
+        ws.send_text(json.dumps({"type": "approval", "id": req["id"], "approve": True}))
+        assert ws.receive_json() == {"type": "tool", "name": "create_reminder", "ok": True}
+    assert _reminders(tmp_path) == ["call mom"]
+    out = [s["tool_response"][0].response["output"] for s in sent if "tool_response" in s][0]
+    assert out["success"] is True
+
+
+@pytest.mark.parametrize("answer", [False, "true", 1, None])
+def test_voice_write_denied_unless_approve_is_exactly_true(fake_live, monkeypatch, tmp_path, answer):
+    monkeypatch.setenv("JARVIS_DB_PATH", str(tmp_path / "t.sqlite3"))
+    client, sent = fake_live
+    _approval_connect(monkeypatch, sent, GOOD)
+    with _connect(client) as ws:
+        ws.receive_json()
+        req = ws.receive_json()
+        ws.send_text(json.dumps({"type": "approval", "id": req["id"], "approve": answer}))
+        assert ws.receive_json() == {"type": "tool", "name": "create_reminder", "ok": False}
+    assert _reminders(tmp_path) == []
+
+
+def test_voice_write_denied_on_timeout_and_on_wrong_id(fake_live, monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_DB_PATH", str(tmp_path / "t.sqlite3"))
+    monkeypatch.setattr(lv, "APPROVAL_TIMEOUT_SECONDS", 1)
+    client, sent = fake_live
+    _approval_connect(monkeypatch, sent, GOOD)
+    with _connect(client) as ws:
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_text(json.dumps({"type": "approval", "id": "guess", "approve": True}))
+        assert ws.receive_json()["type"] == "error"
+        assert ws.receive_json() == {"type": "tool", "name": "create_reminder", "ok": False}
+    assert _reminders(tmp_path) == []
+
+
+def test_voice_write_rejects_invalid_args_without_asking(fake_live, monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_DB_PATH", str(tmp_path / "t.sqlite3"))
+    client, sent = fake_live
+    _approval_connect(monkeypatch, sent, {"title": "x", "due_at": "tomorrow"})
+    with _connect(client) as ws:
+        ws.receive_json()
+        assert ws.receive_json() == {"type": "tool", "name": "create_reminder", "ok": False}
+    assert _reminders(tmp_path) == []
+
+
+def test_voice_write_denied_when_client_disconnects(fake_live, monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_DB_PATH", str(tmp_path / "t.sqlite3"))
+    client, sent = fake_live
+    _approval_connect(monkeypatch, sent, GOOD)
+    with _connect(client) as ws:
+        ws.receive_json()
+        ws.receive_json()
+    assert _reminders(tmp_path) == []
+
+
+def test_client_has_approval_prompt_that_denies_by_default():
+    from pathlib import Path
+    js = (Path(lv.__file__).parent / "static" / "live_voice.js").read_text(encoding="utf-8")
+    for needle in ('case "approval_request"', 'type:"approval"', "approve:approve===true", "textContent"):
+        assert needle in js
+    assert "innerHTML" not in js
