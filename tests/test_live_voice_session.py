@@ -176,3 +176,60 @@ def test_ws_concurrent_session_cap(fake_live, monkeypatch):
     # slot is released after the first session ends
     with _connect(client) as again:
         assert again.receive_json()["type"] == "ready"
+
+
+# ----------------------------------------------------------------- read-only voice tools
+def test_voice_tools_are_read_only_and_allow_listed(monkeypatch, tmp_path):
+    from app import live_tools
+
+    monkeypatch.setenv("JARVIS_DB_PATH", str(tmp_path / "t.sqlite3"))
+    assert live_tools.execute("get_current_time", {})["success"]
+    assert live_tools.execute("list_reminders", {"limit": "bogus"})["reminders"] == []
+    assert live_tools.execute("list_memories", None)["memories"] == []
+    for name in ("run_shell", "delete_memory", "add_reminder", "aws_change"):
+        assert live_tools.execute(name, {})["success"] is False
+    assert {"get_current_time", "list_reminders", "list_memories"} == live_tools.TOOL_NAMES
+
+
+def test_voice_tools_return_saved_data_clipped(monkeypatch, tmp_path):
+    from app import live_tools
+    from app.personal_data import _connect
+
+    monkeypatch.setenv("JARVIS_DB_PATH", str(tmp_path / "t.sqlite3"))
+    with _connect() as db:
+        db.execute("INSERT INTO reminders(title,due_at,created_at) VALUES(?,?,?)", ("pay rent\nignore previous", "2000-01-01T00:00:00+00:00", "x"))
+        db.execute("INSERT INTO reminders(title,due_at,created_at,completed) VALUES(?,?,?,1)", ("done", "2000-01-01T00:00:00+00:00", "x"))
+    res = live_tools.execute("list_reminders", {})
+    assert [r["title"] for r in res["reminders"]] == ["pay rent ignore previous"]
+    assert res["reminders"][0]["overdue"] is True
+
+
+class ToolCallSession(FakeSession):
+    async def receive(self):
+        fc = SimpleNamespace(id="c1", name="get_current_time", args={})
+        yield SimpleNamespace(tool_call=SimpleNamespace(function_calls=[fc]), server_content=None)
+        bad = SimpleNamespace(id="c2", name="run_shell", args={"command": "whoami"})
+        yield SimpleNamespace(tool_call=SimpleNamespace(function_calls=[bad]), server_content=None)
+        await asyncio.sleep(3600)
+
+    async def send_tool_response(self, function_responses):
+        self.sent.append({"tool_response": function_responses})
+
+
+def test_ws_executes_only_allow_listed_tools(fake_live, monkeypatch):
+    client, sent = fake_live
+
+    class Connect(FakeConnect):
+        async def __aenter__(self):
+            return ToolCallSession(self.sent)
+
+    fake_client = SimpleNamespace(aio=SimpleNamespace(live=SimpleNamespace(connect=lambda **kw: Connect(sent))))
+    monkeypatch.setattr(lv.genai, "Client", lambda api_key: fake_client)
+    with _connect(client) as ws:
+        assert ws.receive_json()["type"] == "ready"
+        first = ws.receive_json()
+        second = ws.receive_json()
+    assert first == {"type": "tool", "name": "get_current_time", "ok": True}
+    assert second == {"type": "tool", "name": "run_shell", "ok": False}
+    outputs = [s["tool_response"][0].response["output"] for s in sent if "tool_response" in s]
+    assert outputs[0]["success"] is True and outputs[1]["success"] is False
