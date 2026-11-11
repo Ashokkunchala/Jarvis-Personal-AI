@@ -65,7 +65,7 @@
   }
   function showApproval(m){
     clearApproval();
-    const anchor=$("liveVoiceStatus");if(!anchor||typeof m.id!=="string")return;
+    const slot=$("approvalSlot"),anchor=slot||$("liveVoiceStatus");if(!anchor||typeof m.id!=="string")return;
     const box=document.createElement("div");box.setAttribute("role","alertdialog");box.setAttribute("aria-label","Approve JARVIS action");
     box.style.cssText="margin:.4rem 0;padding:.5rem;border:1px solid var(--muted,#888);border-radius:8px;font-size:.85rem";
     const label=document.createElement("div");label.textContent="JARVIS asks to: "+String(m.summary||m.name||"make a change").slice(0,300);
@@ -73,7 +73,7 @@
     const no=document.createElement("button");no.type="button";no.textContent="Deny";
     const answer=approve=>{send({type:"approval",id:m.id,approve:approve===true});clearApproval();status(approve?"Approved. Waiting for JARVIS to finish.":"Denied. Nothing was changed.");};
     yes.addEventListener("click",()=>answer(true));no.addEventListener("click",()=>answer(false));
-    box.append(label,yes,no);anchor.after(box);approvalBox=box;yes.focus();box.scrollIntoView({block:"nearest"});
+    box.append(label,yes,no);(slot?slot.append(box):anchor.after(box));approvalBox=box;yes.focus();box.scrollIntoView({block:"center"});
     approvalTimer=setTimeout(()=>{clearApproval();status("Approval timed out. Nothing was changed.");},(Number(m.expires_in)||60)*1000);
   }
   async function onMessage(event){
