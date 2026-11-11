@@ -69,7 +69,7 @@ class ConfirmModal(ModalScreen[bool]):
     def compose(self) -> ComposeResult:
         pretty = json.dumps(self.args, indent=2, ensure_ascii=False) if self.args else "(no arguments)"
         with Vertical(id="confirm-box"):
-            yield Static("⚠  CONFIRMATION REQUIRED", id="confirm-title")
+            yield Static("!  CONFIRMATION REQUIRED", id="confirm-title")
             yield Static(f"tool: {self.tool.name}", id="confirm-tool")
             yield Static(f"risk: {self.tool.risk.name}   ·   {self.tool.description}", id="confirm-risk")
             yield Static(pretty, id="confirm-args")
@@ -152,16 +152,16 @@ class StatusBar(Static):
                 ("  ", ""),
             ))
         if volume.get("success"):
-            icon = "🔇" if volume.get("muted") else "🔊"
-            parts.append(Text.assemble((f"{icon}{volume.get('volume')}%", "dim"), ("  ", "")))
+            label = "MUTED" if volume.get("muted") else "VOL"
+            parts.append(Text.assemble((f"{label} {volume.get('volume')}%", "dim"), ("  ", "")))
 
         if android.get("connected"):
             count = len(android.get("devices", []))
             bat = (android.get("battery") or {})
             bat_txt = f"{bat.get('percent')}%" if bat.get("success") else "n/a"
-            parts.append(Text.assemble(("📱 ", ""), (f"{count} device {bat_txt}", "green")))
+            parts.append(Text.assemble(("PHONE ", "dim"), (f"{count} device {bat_txt}", "green")))
         else:
-            parts.append(Text.assemble(("📱 ", ""), ("no phone", "dim red")))
+            parts.append(Text.assemble(("", ""), ("no phone", "dim red")))
 
         parts.append(Text.assemble(("  ", ""), (datetime.now().strftime("%H:%M:%S"), "dim")))
         return self._join(parts)
@@ -312,7 +312,7 @@ class JarvisTUI(App):
     #head { height: 5; dock: top; }
     #topbar { height: 3; background: #04122a; border-bottom: heavy #1c6fa8; padding: 0 2; content-align: left middle; }
     #status-bar { height: 1; background: #03102a; padding: 0 2; }
-    #foot { height: 7; dock: bottom; }
+    #foot { height: 8; dock: bottom; }
     #main { height: 1fr; }
     #left { width: 36; min-width: 34; }
     #center { width: 1fr; min-width: 40; }
@@ -333,7 +333,7 @@ class JarvisTUI(App):
     .risk-medium { border-left: thick #ffc35a; }
     .risk-low { border-left: thick #36d6ff; }
     .risk-safe { border-left: thick #38e8a0; }
-    #input-bar { height: 5; background: #04122a; padding: 1 1; border-top: heavy #1c6fa8; }
+    #input-bar { height: 6; background: #04122a; padding: 1 1; border-top: heavy #1c6fa8; }
     Input { background: #030d20; border: tall #1c6fa8; width: 1fr; }
     Input:focus { border: tall #36d6ff; }
     #send-btn { width: 14; background: #0b7bb8; color: #fff; }
@@ -358,12 +358,19 @@ class JarvisTUI(App):
     ]
 
     def __init__(self, brain: JarvisBrain | None = None, simple: bool | None = None) -> None:
+        # Textual removes NO_COLOR from the environment when it starts, so read it first.
+        wants_plain = "NO_COLOR" in os.environ or os.getenv("TERM", "") == "dumb" or \
+            os.getenv("JARVIS_TUI_SIMPLE", "") == "1"
         super().__init__()
-        # Plain mode: NO_COLOR, dumb terminals or JARVIS_TUI_SIMPLE=1 drop the animation.
+        # Plain mode: no animation and no colour (greyscale only).
         if simple is None:
-            simple = bool(os.getenv("NO_COLOR")) or os.getenv("TERM", "") == "dumb" or \
-                os.getenv("JARVIS_TUI_SIMPLE", "") == "1"
+            simple = wants_plain
         self.simple = simple
+        if simple:
+            from textual.filter import Monochrome
+
+            if not any(isinstance(f, Monochrome) for f in self._filters):
+                self._filters.append(Monochrome())
         self.pending_tool: str | None = None
         self.brain = brain
         self.history_widgets: list[Any] = []
@@ -437,6 +444,9 @@ class JarvisTUI(App):
         self.set_class(width < 110, "compact")
         self.set_class(height < 32, "short")
         self.set_class(self.simple, "simple")
+        self.query_one("#hint", Static).update(
+            "Enter send · F1 help · F3 panels · F4 stop · Ctrl+Q quit" if width < 90 else
+            "Enter send · F1 help · F2 input · F3 panels · F4 stop · Ctrl+L clear · Ctrl+Q quit")
 
     def _tick(self) -> None:
         try:
@@ -473,7 +483,7 @@ class JarvisTUI(App):
     def _render_needs(self) -> None:
         text = Text()
         if self.pending_tool:
-            text.append("⚠ Approval waiting\n", style="bold #ff9f43")
+            text.append("! Approval waiting\n", style="bold #ff9f43")
             text.append(f"{self.pending_tool}\n", style="#e4f3ff")
             text.append("y approve · n reject", style="dim")
         else:
@@ -601,7 +611,7 @@ class JarvisTUI(App):
             self._sys(f"[dim]heard: {_brief(transcript, 180)}[/dim]")
             widget = self.query_one("#cmd", Input)
             widget.value = transcript
-            self._user(f"🎙 {transcript}")
+            self._user(f"[voice] {transcript}")
             self._run_turn(transcript)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
