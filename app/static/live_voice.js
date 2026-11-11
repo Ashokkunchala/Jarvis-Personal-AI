@@ -4,15 +4,16 @@
   if (!$("liveVoiceConnect")) return;
 
   let socket=null, stream=null, inputContext=null, outputContext=null, source=null, processor=null, silentGain=null;
-  let active=false, outputNextTime=0, outputNodes=new Set(), reconnecting=false;
+  let active=false, outputNextTime=0, outputNodes=new Set(), reconnecting=false,userStopped=false,attempt=0,retryTimer=null,wasReconnect=false;
 
   const status=(message,isError=false)=>{const el=$("liveVoiceStatus");if(el){el.textContent=message;el.className=isError?"tiny error":"tiny";}};
-  const setUi=(state,detail)=>{
+  const setUi=(state,detail,title)=>{
+    document.body.dataset.liveState=active?"active":reconnecting?"reconnecting":"off";
     if(typeof window.jarvisSetVoiceState==="function") window.jarvisSetVoiceState(state,
-      state==="listening"?"Listening to you":state==="thinking"?"JARVIS is thinking":state==="speaking"?"JARVIS is speaking":"JARVIS is ready",detail);
+      title||(state==="listening"?"Listening to you":state==="thinking"?"JARVIS is thinking":state==="speaking"?"JARVIS is speaking":"JARVIS is ready"),detail);
     const dictationStop=$("voiceStop");if(dictationStop)dictationStop.hidden=true; // dictation is not running during live voice
     $("liveVoiceConnect").hidden=active;
-    $("liveVoiceStop").hidden=!active;
+    $("liveVoiceStop").hidden=!(active||reconnecting);
     $("liveVoiceInterrupt").hidden=!active;
   };
   const send=message=>{if(socket&&socket.readyState===WebSocket.OPEN){socket.send(JSON.stringify(message));return true;}return false;};
@@ -89,7 +90,7 @@
   async function onMessage(event){
     let m;try{m=JSON.parse(event.data);}catch(_){return;}
     switch(m.type){
-      case "ready":status("Live audio connected · "+m.model);setUi("listening","Microphone active by your request. Speak naturally.");break;
+      case "ready":attempt=0;reconnecting=false;if(wasReconnect){wasReconnect=false;const t=$("liveVoiceTranscript");if(t)t.textContent+=(t.textContent?"\n":"")+"-- reconnected. JARVIS does not remember what was said before the drop. --";}status("Live audio connected · "+m.model);setUi("listening","Microphone active by your request. Speak naturally.");break;
       case "audio":try{await playAudio(m.data);}catch(e){status("Audio playback failed: "+e.message,true);}break;
       case "text":showTranscript("assistant",m.text);break;
       case "transcript":showTranscript(m.source,m.text);break;
@@ -103,8 +104,14 @@
   }
   async function startCapture(){
     if(!navigator.mediaDevices?.getUserMedia||!window.AudioContext)throw new Error("Live audio requires a secure context and Web Audio support.");
-    stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    // The socket can close while the browser is still asking for the microphone
+    // (server drop, user pressed Stop). Never leave the microphone on without a session.
+    const abandoned=()=>userStopped||!socket||socket.readyState!==WebSocket.OPEN;
+    const local=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    if(abandoned()){local.getTracks().forEach(t=>t.stop());return;}
+    stream=local;
     inputContext=new AudioContext();if(inputContext.state==="suspended")await inputContext.resume();
+    if(abandoned()){stream.getTracks().forEach(t=>t.stop());stream=null;inputContext.close().catch(()=>{});inputContext=null;return;}
     source=inputContext.createMediaStreamSource(stream);processor=inputContext.createScriptProcessor(4096,1,1);silentGain=inputContext.createGain();silentGain.gain.value=0;
     source.connect(processor);processor.connect(silentGain);silentGain.connect(inputContext.destination);
     processor.onaudioprocess=event=>{
@@ -125,6 +132,19 @@
     if(sendEnd)send({type:"audio_end"});
     stopPlayback();setUi("","Live microphone stopped.");
   }
+  // Unexpected drops (server restart, network loss) retry up to 4 times with
+  // backoff. Stop Live Voice cancels. Auth/config/limit closes never retry.
+  function scheduleReconnect(){
+    clearTimeout(retryTimer);
+    if(userStopped)return;
+    attempt++;
+    if(attempt>4){reconnecting=false;wasReconnect=false;setUi("","Live voice could not reconnect.");status("Live voice could not reconnect. Select Start Live Voice to try again.",true);return;}
+    reconnecting=true;wasReconnect=true;
+    const delay=1000*2**(attempt-1);
+    setUi("","Connection lost. The microphone is off until the session is back.","Reconnecting");
+    status("Connection lost. Reconnecting ("+attempt+"/4) in "+delay/1000+" s. Select Stop Live Voice to cancel.",true);
+    retryTimer=setTimeout(async()=>{if(userStopped)return;try{await connect();}catch(e){scheduleReconnect();}},delay);
+  }
   async function connect(){
     const token=$("deviceToken")?.value?.trim()||"";
     if(token.length<32)throw new Error("Enter your JARVIS API token and click Save settings first.");
@@ -144,14 +164,15 @@
     socket.addEventListener("error",()=>status("Live connection failed. Check API token, backend config and model access.",true));
     socket.addEventListener("close",event=>{
       releaseCapture(false);socket=null;
+      if(!userStopped&&!event.wasClean&&![4401,4403,1013].includes(event.code)){scheduleReconnect();return;}
       if(event.code===4401)status("Live authorization failed. Check your JARVIS token.",true);
       else if(event.code===4403)status("This page origin is not allowed for live voice.",true);
       else if(event.code===1013)status("Live voice is unavailable: configure a supported Gemini Live model and API key.",true);
       else status("Live voice disconnected ("+event.code+").",event.code!==1000);
     });
   }
-  $("liveVoiceConnect").addEventListener("click",()=>{connect().catch(e=>status(e.message,true));});
-  $("liveVoiceStop").addEventListener("click",()=>{releaseCapture();if(socket&&socket.readyState===WebSocket.OPEN)socket.close(1000,"user stopped live voice");});
+  $("liveVoiceConnect").addEventListener("click",()=>{userStopped=false;attempt=0;reconnecting=false;connect().catch(e=>status(e.message,true));});
+  $("liveVoiceStop").addEventListener("click",()=>{userStopped=true;reconnecting=false;wasReconnect=false;clearTimeout(retryTimer);releaseCapture();status("Live voice stopped.");if(socket&&socket.readyState===WebSocket.OPEN)socket.close(1000,"user stopped live voice");});
   $("liveVoiceInterrupt").addEventListener("click",()=>{dropStaleAudio();stopPlayback();send({type:"stop"});status("Playback interrupted. Speak your next instruction.");setUi("listening","JARVIS response interrupted.");});
-  window.addEventListener("pagehide",()=>{releaseCapture(false);if(socket){socket.close(1000,"page closed");socket=null;}if(outputContext)outputContext.close().catch(()=>{});});
+  window.addEventListener("pagehide",()=>{userStopped=true;clearTimeout(retryTimer);releaseCapture(false);if(socket){socket.close(1000,"page closed");socket=null;}if(outputContext)outputContext.close().catch(()=>{});});
 })();
