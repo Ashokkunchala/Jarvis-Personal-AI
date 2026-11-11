@@ -20,6 +20,9 @@
 - Live audio responses and transcripts are streamed to the page. The raw audio is not explicitly saved by the client, but audio is sent to the configured Gemini API as part of the Live session.
 - Android remains tap-to-speak via system speech recognition + system TTS; native continuous Live audio is not yet connected to the WebSocket.
 
+## Voice approvals
+`create_reminder` is the only state-changing voice tool. The server sends `{"type":"approval_request","id","summary"}` and waits; the client answers `{"type":"approval","id","approve":true|false}`. Anything except `approve: true` for the pending id (timeout, disconnect, wrong id, invalid arguments) means nothing is changed. Untested with a real browser and real Live model.
+
 ## Security expectations
 
 - Never expose the Gemini key in browser JS or Android resources.
