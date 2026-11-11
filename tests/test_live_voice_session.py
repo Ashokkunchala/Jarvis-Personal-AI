@@ -336,4 +336,4 @@ def test_client_drops_stale_audio_after_manual_interrupt():
     js = (Path(lv.__file__).parent / "static" / "live_voice.js").read_text(encoding="utf-8")
     assert "if(dropAudioUntilTurnEnd)return;" in js
     assert 'liveVoiceInterrupt").addEventListener("click",()=>{dropStaleAudio();' in js
-    assert js.count("endStaleAudioWindow()") >= 4  # turn_complete, interrupted, stop, definition
+    assert js.count("endStaleAudioWindow()") >= 3  # turn_complete, interrupted, stop
