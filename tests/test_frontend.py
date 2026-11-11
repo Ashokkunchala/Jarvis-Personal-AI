@@ -82,3 +82,30 @@ def test_external_live_voice_javascript_syntax_when_node_is_available():
     script = HTML_PATH.parent / "live_voice.js"
     result = subprocess.run([node, "--check", str(script)], text=True, capture_output=True, check=False)
     assert result.returncode == 0, result.stderr
+
+
+def test_every_element_id_the_scripts_look_up_exists_in_the_page():
+    """A missing id makes $("id").addEventListener throw and silently kills the page script."""
+    import re
+
+    html = HTML_PATH.read_text(encoding="utf-8")
+    ids = set(re.findall(r'id="([^"]+)"', html))
+    js = html + (HTML_PATH.parent / "live_voice.js").read_text(encoding="utf-8")
+    used = set(re.findall(r'\$\("([A-Za-z0-9_-]+)"\)', js))
+    # elements created at runtime are not expected in the static HTML
+    missing = sorted(used - ids - {"welcome"})
+    assert not missing, f"script looks up ids that are not in index.html: {missing}"
+
+
+def test_live_voice_client_script_is_served_by_both_entry_points():
+    from fastapi.testclient import TestClient
+
+    from app.main import app as main_app
+    from app.main_enhanced import app as enhanced_app
+
+    for app in (main_app, enhanced_app):
+        res = TestClient(app).get("/static/live_voice.js")
+        assert res.status_code == 200 and "javascript" in res.headers["content-type"]
+        assert "/api/live-voice" in res.text
+        # the ticket endpoint exists (401/503 without a token, not 404)
+        assert TestClient(app).post("/api/live-voice-ticket").status_code in (401, 503)
