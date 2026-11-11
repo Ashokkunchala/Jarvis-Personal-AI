@@ -39,6 +39,7 @@ class Tool:
     category: str = "general"
     requires_confirmation: bool = False
     requires_device: bool = False
+    never_auto_approve: bool = False
     examples: list[str] = field(default_factory=list)
 
     @property
@@ -199,6 +200,8 @@ class ToolRegistry:
 
         emit({"type": "tool_start", "tool": name, "args": args, "risk": tool.risk.name, "category": tool.category})
 
+        if tool.never_auto_approve:
+            auto_approve = False  # cloud-changing tools always need an explicit yes
         if tool.confirm_required and not auto_approve:
             if confirm is None:
                 # Fail closed: a tool that needs approval never runs without
