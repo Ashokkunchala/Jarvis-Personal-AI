@@ -8,6 +8,8 @@
 - FastAPI WebSocket route at `/api/live-voice`. It authenticates the configured bearer token, checks browser Origin against configured CORS origins, keeps the Gemini API key on the server, validates payload sizes, opens a Gemini Live session, forwards audio/text/transcripts, and closes the session on disconnect.
 - Typed chat remains available as a fallback. Voice-session model tool calls are not permitted to execute device actions.
 
+- Server-side guardrails on each live session: session length, idle timeout, audio volume per minute and a concurrent-session cap (see CHANGELOG for the environment variables). Covered by tests with a fake provider client; not exercised against the real Live API.
+
 ## Not yet proven / not production-ready
 
 - The Live API model configured in `app/live_voice.py` is a preview model ID. Confirm current availability and API account access using official Gemini Live documentation before relying on it; do not assume all API accounts have access.
