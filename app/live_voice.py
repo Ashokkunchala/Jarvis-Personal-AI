@@ -9,9 +9,14 @@ JSON client frames:
   {"type":"audio_end"}
   {"type":"stop"}
   {"type":"ping"}
+  {"type":"approval","id":"<request id>","approve":true|false}
+
+A state-changing voice tool (create_reminder) is held until the client answers
+an approval_request. No answer within APPROVAL_TIMEOUT_SECONDS, a disconnect, or
+anything other than approve=true is a denial.
 
 JSON server events:
-  ready, audio, text, transcript, turn_complete, interrupted, error
+  ready, audio, text, transcript, turn_complete, interrupted, tool, approval_request, error
 
 This is a server-brokered session; the client never receives the Gemini key.
 The browser exchanges its bearer token for a single-use, 60-second WebSocket ticket.
@@ -52,6 +57,7 @@ MAX_SESSION_SECONDS = int(os.getenv("JARVIS_LIVE_MAX_SESSION_SECONDS", "900"))
 IDLE_TIMEOUT_SECONDS = int(os.getenv("JARVIS_LIVE_IDLE_TIMEOUT_SECONDS", "120"))
 # 16 kHz mono PCM16 is 32,000 bytes per second; allow 1.5x real time per minute.
 MAX_AUDIO_BYTES_PER_MINUTE = int(os.getenv("JARVIS_LIVE_MAX_AUDIO_BYTES_PER_MINUTE", str(32_000 * 60 * 3 // 2)))
+APPROVAL_TIMEOUT_SECONDS = int(os.getenv("JARVIS_LIVE_APPROVAL_TIMEOUT_SECONDS", "60"))
 MAX_CONCURRENT_SESSIONS = int(os.getenv("JARVIS_LIVE_MAX_CONCURRENT_SESSIONS", "2"))
 _active_sessions = 0
 
@@ -172,6 +178,32 @@ async def live_voice(websocket: WebSocket):
     await websocket.accept()
     client = genai.Client(api_key=settings.gemini_api_key)
     receive_task: asyncio.Task | None = None
+    pending_approvals: dict[str, asyncio.Future] = {}
+
+    async def run_tool(name: str, args: dict) -> dict:
+        """Run an allow-listed tool; hold approval-gated ones for an explicit yes."""
+        if name not in live_tools.APPROVAL_TOOL_NAMES:
+            return live_tools.response_payload(await asyncio.to_thread(live_tools.execute, name, args))
+        prepared, summary = live_tools.prepare_approval(name, args)
+        if prepared is None:
+            return {"success": False, "error": summary}
+        if pending_approvals:
+            return {"success": False, "error": "Another approval is already waiting."}
+        request_id = secrets.token_urlsafe(9)
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        pending_approvals[request_id] = future
+        try:
+            await _send(websocket, {"type": "approval_request", "id": request_id, "name": name,
+                                    "summary": summary, "expires_in": APPROVAL_TIMEOUT_SECONDS})
+            try:
+                approved = await asyncio.wait_for(future, timeout=APPROVAL_TIMEOUT_SECONDS)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                approved = False
+        finally:
+            pending_approvals.pop(request_id, None)
+        if approved is not True:
+            return {"success": False, "error": "The user did not approve. Nothing was changed."}
+        return live_tools.response_payload(await asyncio.to_thread(live_tools.execute_approved, name, prepared))
     _active_sessions += 1
     try:
         config = {
@@ -182,7 +214,7 @@ async def live_voice(websocket: WebSocket):
                 "For consequential actions, ask for explicit confirmation."
                 + live_tools.VOICE_TOOL_INSTRUCTION
             ),
-            "tools": [{"function_declarations": live_tools.TOOL_DECLARATIONS}],
+            "tools": [{"function_declarations": live_tools.ALL_DECLARATIONS}],
             "speech_config": {"voice_config": {"prebuilt_voice_config": {"voice_name": settings.gemini_live_voice}}},
             "input_audio_transcription": {},
             "output_audio_transcription": {},
@@ -206,9 +238,7 @@ async def live_voice(websocket: WebSocket):
                             if tool_call and getattr(tool_call, "function_calls", None):
                                 responses = []
                                 for fc in tool_call.function_calls:
-                                    result = live_tools.response_payload(
-                                        await asyncio.to_thread(live_tools.execute, fc.name, dict(fc.args or {}))
-                                    )
+                                    result = await run_tool(fc.name, dict(fc.args or {}))
                                     await _send(websocket, {"type": "tool", "name": fc.name, "ok": bool(result.get("success"))})
                                     responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"output": result}))
                                 await session.send_tool_response(function_responses=responses)
@@ -270,6 +300,13 @@ async def live_voice(websocket: WebSocket):
                 kind = message.get("type")
                 if kind == "ping":
                     await _send(websocket, {"type": "pong"})
+                elif kind == "approval":
+                    pending = pending_approvals.get(message.get("id")) if isinstance(message.get("id"), str) else None
+                    if pending is None or pending.done():
+                        await _send(websocket, {"type": "error", "message": "No matching approval request."})
+                    else:
+                        guard.touch()
+                        pending.set_result(message.get("approve") is True)
                 elif kind == "stop":
                     # Server-side voice activity should interrupt the model. The UI
                     # must also stop/flush local audio playback immediately.
@@ -312,6 +349,9 @@ async def live_voice(websocket: WebSocket):
         await _send(websocket, {"type": "error", "message": "Live voice session failed. Check server configuration."})
     finally:
         _active_sessions = max(0, _active_sessions - 1)
+        for fut in pending_approvals.values():
+            if not fut.done():
+                fut.set_result(False)
         if receive_task and not receive_task.done():
             receive_task.cancel()
             try:
