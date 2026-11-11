@@ -22,8 +22,9 @@ main{max-width:1240px;margin:0 auto;padding:0 22px 30px;display:grid;grid-templa
 <div class="voice-title" id="voiceTitle">JARVIS is ready</div>
 <div class="voice-subtitle" id="voiceSubtitle">Choose Live Voice for a continuous audio session, or use Dictate for one-utterance input.</div>
 <div class="voice-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-<div class="voice-controls"><button class="primary" type="button" id="liveVoiceConnect">⚡ Start Live Voice</button><button type="button" id="liveVoiceStop" hidden>Stop Live Voice</button><button type="button" id="liveVoiceInterrupt" hidden>Interrupt JARVIS</button><button type="button" id="voiceStart">🎙 Dictate</button><button type="button" id="stopSpeech">Stop speaking</button></div>
-<p class="tiny">Live voice sends microphone audio to your JARVIS backend and streams native audio responses. Start only when ready; microphone is active until stopped.</p>\n<label class="check"><input id="autoStartLiveVoice" type="checkbox"> <span>Auto-start Live Voice when this page opens. Requires microphone permission already granted; microphone stays active until you stop it.</span></label>
+<div class="voice-controls"><button class="primary" type="button" id="liveVoiceConnect">⚡ Start Live Voice</button><button type="button" id="liveVoiceStop" hidden>Stop Live Voice</button><button type="button" id="liveVoiceInterrupt" hidden>Interrupt JARVIS</button><button type="button" id="voiceStart">🎙 Dictate</button><button type="button" id="voiceStop" hidden>Stop dictation</button><button type="button" id="stopSpeech">Stop speaking</button></div>
+<p class="tiny">Live voice sends microphone audio to your JARVIS backend and streams native audio responses. Start only when ready; microphone is active until stopped.</p>
+<label class="check"><input id="autoStartLiveVoice" type="checkbox"> <span>Auto-start Live Voice when this page opens. Requires microphone permission already granted; microphone stays active until you stop it.</span></label>
 <p class="tiny" id="liveVoiceStatus" role="status">Live voice has not been started.</p>
 <pre id="liveVoiceTranscript" style="white-space:pre-wrap;text-align:left;max-width:100%;max-height:110px;overflow:auto;font:inherit;font-size:.8rem;color:var(--muted)"></pre>
 </div>
