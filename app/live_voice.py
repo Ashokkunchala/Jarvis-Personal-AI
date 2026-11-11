@@ -24,6 +24,7 @@ import base64
 import binascii
 import json
 import logging
+import os
 import secrets
 import time
 from urllib.parse import urlsplit
@@ -44,6 +45,56 @@ MAX_AUDIO_BYTES = 64 * 1024
 MAX_TEXT_CHARS = 4000
 LIVE_TICKET_TTL_SECONDS = 60
 _live_tickets: dict[str, float] = {}
+
+# Per-session guardrails. They bound cost and exposure; override with env vars.
+MAX_SESSION_SECONDS = int(os.getenv("JARVIS_LIVE_MAX_SESSION_SECONDS", "900"))
+IDLE_TIMEOUT_SECONDS = int(os.getenv("JARVIS_LIVE_IDLE_TIMEOUT_SECONDS", "120"))
+# 16 kHz mono PCM16 is 32,000 bytes per second; allow 1.5x real time per minute.
+MAX_AUDIO_BYTES_PER_MINUTE = int(os.getenv("JARVIS_LIVE_MAX_AUDIO_BYTES_PER_MINUTE", str(32_000 * 60 * 3 // 2)))
+MAX_CONCURRENT_SESSIONS = int(os.getenv("JARVIS_LIVE_MAX_CONCURRENT_SESSIONS", "2"))
+_active_sessions = 0
+
+
+class SessionGuard:
+    """Tracks one live session's age, idleness and audio volume."""
+
+    def __init__(self, now=time.monotonic, max_seconds: int | None = None, idle_seconds: int | None = None,
+                 max_audio_bytes_per_minute: int | None = None):
+        self._now = now
+        self.max_seconds = MAX_SESSION_SECONDS if max_seconds is None else max_seconds
+        self.idle_seconds = IDLE_TIMEOUT_SECONDS if idle_seconds is None else idle_seconds
+        self.max_audio = MAX_AUDIO_BYTES_PER_MINUTE if max_audio_bytes_per_minute is None else max_audio_bytes_per_minute
+        self.started = now()
+        self.last_activity = self.started
+        self._window_start = self.started
+        self._window_bytes = 0
+
+    def touch(self) -> None:
+        """Record real user activity (audio or text). Pings do not count."""
+        self.last_activity = self._now()
+
+    def remaining(self) -> float:
+        """Seconds until the session must end for age or idleness."""
+        now = self._now()
+        return min(self.started + self.max_seconds - now, self.last_activity + self.idle_seconds - now)
+
+    def expiry_reason(self) -> str | None:
+        now = self._now()
+        if now - self.started >= self.max_seconds:
+            return "Session time limit reached."
+        if now - self.last_activity >= self.idle_seconds:
+            return "Session closed after being idle."
+        return None
+
+    def allow_audio(self, nbytes: int) -> bool:
+        """Rate-limit audio sent to the provider per rolling minute."""
+        now = self._now()
+        if now - self._window_start >= 60:
+            self._window_start, self._window_bytes = now, 0
+        if self._window_bytes + nbytes > self.max_audio:
+            return False
+        self._window_bytes += nbytes
+        return True
 
 
 def _issue_live_ticket() -> str:
@@ -111,9 +162,16 @@ async def live_voice(websocket: WebSocket):
         await websocket.close(code=1013, reason="Gemini API is not configured")
         return
 
+    global _active_sessions
+    if _active_sessions >= MAX_CONCURRENT_SESSIONS:
+        await websocket.close(code=1013, reason="too many live voice sessions")
+        return
+    guard = SessionGuard()
+
     await websocket.accept()
     client = genai.Client(api_key=settings.gemini_api_key)
     receive_task: asyncio.Task | None = None
+    _active_sessions += 1
     try:
         config = {
             "response_modalities": ["AUDIO"],
@@ -175,7 +233,15 @@ async def live_voice(websocket: WebSocket):
 
             receive_task = asyncio.create_task(pump_provider())
             while True:
-                raw = await websocket.receive_text()
+                reason = guard.expiry_reason()
+                if reason is None:
+                    try:
+                        raw = await asyncio.wait_for(websocket.receive_text(), timeout=max(guard.remaining(), 0.01))
+                    except asyncio.TimeoutError:
+                        reason = guard.expiry_reason() or "Session closed after being idle."
+                if reason is not None:
+                    await _send(websocket, {"type": "error", "message": reason + " Start a new session to continue."})
+                    break
                 if len(raw) > (MAX_AUDIO_BYTES * 2):
                     await _send(websocket, {"type": "error", "message": "Frame too large."})
                     continue
@@ -194,11 +260,13 @@ async def live_voice(websocket: WebSocket):
                     # Server-side voice activity should interrupt the model. The UI
                     # must also stop/flush local audio playback immediately.
                     await session.send_realtime_input(text="Stop speaking now.")
+                    guard.touch()
                 elif kind == "text":
                     text = message.get("text")
                     if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT_CHARS:
                         await _send(websocket, {"type": "error", "message": "Text is empty or too long."})
                         continue
+                    guard.touch()
                     await session.send_realtime_input(text=text.strip())
                 elif kind == "audio":
                     encoded = message.get("data")
@@ -214,6 +282,10 @@ async def live_voice(websocket: WebSocket):
                     if not pcm or len(pcm) > MAX_AUDIO_BYTES or len(pcm) % 2:
                         await _send(websocket, {"type": "error", "message": "Audio must be non-empty PCM16 frames within the frame limit."})
                         continue
+                    if not guard.allow_audio(len(pcm)):
+                        await _send(websocket, {"type": "error", "message": "Audio rate limit exceeded; slow down."})
+                        continue
+                    guard.touch()
                     await session.send_realtime_input(audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000"))
                 elif kind == "audio_end":
                     await session.send_realtime_input(audio_stream_end=True)
@@ -225,6 +297,7 @@ async def live_voice(websocket: WebSocket):
         logger.exception("Live voice session failed")
         await _send(websocket, {"type": "error", "message": "Live voice session failed. Check server configuration."})
     finally:
+        _active_sessions = max(0, _active_sessions - 1)
         if receive_task and not receive_task.done():
             receive_task.cancel()
             try:
