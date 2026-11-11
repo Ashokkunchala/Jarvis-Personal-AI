@@ -199,7 +199,19 @@ class ToolRegistry:
 
         emit({"type": "tool_start", "tool": name, "args": args, "risk": tool.risk.name, "category": tool.category})
 
-        if tool.confirm_required and confirm is not None and not auto_approve:
+        if tool.confirm_required and not auto_approve:
+            if confirm is None:
+                # Fail closed: a tool that needs approval never runs without
+                # a way to ask the user.
+                logger.warning("Tool %s needs confirmation but no confirm callback was supplied", name)
+                emit({"type": "tool_cancelled", "tool": name})
+                return ToolResult(
+                    name,
+                    False,
+                    error="Confirmation required but no approval channel is available.",
+                    elapsed=time.time() - started,
+                    cancelled=True,
+                )
             try:
                 approved = await confirm(tool, args)
             except Exception:
