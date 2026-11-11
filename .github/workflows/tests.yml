@@ -43,8 +43,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Compile front-end regression test
-        run: python -m py_compile tests/test_frontend.py
+      - name: Compile every Python file
+        run: python -m compileall -q app jarvis windows_agent tests jarvis_cli.py jarvis_daemon.py run_enhanced.py
+      - name: Lint for syntax errors and undefined names
+        run: |
+          python -m pip install "ruff>=0.6,<1.0"
+          ruff check . --select E9,F63,F7,F82
 
   windows-installer-check:
     runs-on: windows-latest
