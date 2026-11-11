@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-\"\"\"
+"""
 JARVIS Real-Time Assistant Daemon
 Iron Man style - Always listening, voice-first, system-aware
-\"\"\"
+"""
 
 import asyncio
 import logging
