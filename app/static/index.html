@@ -219,14 +219,16 @@ const orb=$("voiceOrb");
 function syncState(){
   const st=["listening","thinking","speaking"].find(s=>orb.classList.contains(s))||"";
   document.querySelectorAll(".states span").forEach(s=>s.classList.toggle("on",s.dataset.s===st));
-  const live=!$("liveVoiceStop").hidden;checks.voice=live;
-  setSt($("ccVoice"),live?"ok":"warn",live?"Session active":"Idle");
-  $("ccMode").textContent=live?"VOICE SESSION ACTIVE":"VOICE SESSION OFFLINE";gauge();
+  const ls=document.body.dataset.liveState||"off",live=ls==="active";checks.voice=live;
+  setSt($("ccVoice"),live?"ok":ls==="reconnecting"?"warn":"warn",live?"Session active":ls==="reconnecting"?"Reconnecting":"Idle");
+  $("ccMode").textContent=live?"VOICE SESSION ACTIVE":ls==="reconnecting"?"RECONNECTING - MICROPHONE OFF":"VOICE SESSION OFFLINE";
+  if(ls==="reconnecting")setSt($("svcLive"),"warn","Reconnecting");gauge();
 }
 new MutationObserver(syncState).observe(orb,{attributes:true,attributeFilter:["class"]});
 new MutationObserver(syncState).observe($("liveVoiceStop"),{attributes:true,attributeFilter:["hidden"]});
+new MutationObserver(syncState).observe(document.body,{attributes:true,attributeFilter:["data-live-state"]});
 new MutationObserver(()=>{const t=$("liveVoiceStatus").textContent;
-  if(/disconnected|model access|unavailable/i.test(t))setSt($("svcLive"),"bad","Last session failed");else if(/connected/i.test(t))setSt($("svcLive"),"ok","Session opened (audio not verified)");
+  if(/Connection lost|Reconnecting/i.test(t))setSt($("svcLive"),"warn","Reconnecting");else if(/disconnected|model access|unavailable|could not reconnect/i.test(t))setSt($("svcLive"),"bad","Last session failed");else if(/connected/i.test(t))setSt($("svcLive"),"ok","Session opened (audio not verified)");
 }).observe($("liveVoiceStatus"),{childList:true,characterData:true,subtree:true});
 syncState();
 // Buttons
