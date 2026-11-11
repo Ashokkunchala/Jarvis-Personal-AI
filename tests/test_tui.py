@@ -190,3 +190,25 @@ async def test_layout_degrades_on_small_terminals() -> None:
         assert app.has_class("compact") and app.has_class("short")
         assert app.query_one("#sidebar").display is False
         assert app.query_one("#cmd").display is True
+
+
+def test_no_color_env_selects_plain_greyscale_mode(monkeypatch) -> None:
+    from textual.filter import Monochrome
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    app = JarvisTUI(brain=StubBrain())
+    assert app.simple is True
+    assert any(isinstance(f, Monochrome) for f in app._filters)
+    monkeypatch.delenv("NO_COLOR")
+    monkeypatch.setenv("JARVIS_TUI_SIMPLE", "1")
+    assert any(isinstance(f, Monochrome) for f in JarvisTUI(brain=StubBrain())._filters)
+
+
+def test_terminal_source_has_no_emoji_glyphs() -> None:
+    import pathlib
+
+    import jarvis.terminal.jarvis_tui as module
+
+    text = pathlib.Path(module.__file__).read_text(encoding="utf-8")
+    assert not [c for c in text if ord(c) > 0x1F000]
+    assert "\u26a0" not in text
