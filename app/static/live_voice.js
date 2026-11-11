@@ -58,23 +58,33 @@
   }
   // Approval prompt for state-changing voice tools. Text is set with textContent
   // only; the server treats anything but an explicit Approve as a denial.
-  let approvalBox=null,approvalTimer=null;
+  let approvalBox=null,approvalTimer=null,approvalTick=null;
   function clearApproval(){
     if(approvalTimer){clearTimeout(approvalTimer);approvalTimer=null;}
+    if(approvalTick){clearInterval(approvalTick);approvalTick=null;}
     if(approvalBox){approvalBox.remove();approvalBox=null;}
+    document.body.classList.remove("has-approval");
   }
   function showApproval(m){
     clearApproval();
     const slot=$("approvalSlot"),anchor=slot||$("liveVoiceStatus");if(!anchor||typeof m.id!=="string")return;
-    const box=document.createElement("div");box.setAttribute("role","alertdialog");box.setAttribute("aria-label","Approve JARVIS action");
-    box.style.cssText="margin:.4rem 0;padding:.5rem;border:1px solid var(--muted,#888);border-radius:8px;font-size:.85rem";
+    const box=document.createElement("div");box.setAttribute("role","alertdialog");box.setAttribute("aria-label","Approve JARVIS action");box.setAttribute("aria-live","assertive");
+    if(!slot)box.style.cssText="margin:.4rem 0;padding:.5rem;border:1px solid var(--muted,#888);border-radius:8px;font-size:.85rem";
     const label=document.createElement("div");label.textContent="JARVIS asks to: "+String(m.summary||m.name||"make a change").slice(0,300);
+    const cd=document.createElement("span");cd.className="cd";
     const yes=document.createElement("button");yes.type="button";yes.className="primary";yes.textContent="Approve";
     const no=document.createElement("button");no.type="button";no.textContent="Deny";
+    const stop=document.createElement("button");stop.type="button";stop.textContent="Stop voice";
     const answer=approve=>{send({type:"approval",id:m.id,approve:approve===true});clearApproval();status(approve?"Approved. Waiting for JARVIS to finish.":"Denied. Nothing was changed.");};
     yes.addEventListener("click",()=>answer(true));no.addEventListener("click",()=>answer(false));
-    box.append(label,yes,no);(slot?slot.append(box):anchor.after(box));approvalBox=box;yes.focus();box.scrollIntoView({block:"center"});
-    approvalTimer=setTimeout(()=>{clearApproval();status("Approval timed out. Nothing was changed.");},(Number(m.expires_in)||60)*1000);
+    stop.addEventListener("click",()=>{clearApproval();$("liveVoiceStop").click();}); // closing the session is a denial on the server
+    box.append(label,cd,yes,no,stop);(slot?slot.append(box):anchor.after(box));approvalBox=box;
+    document.body.classList.add("has-approval");
+    try{yes.focus({preventScroll:true});}catch(_){}
+    const ttl=Math.max(1,Number(m.expires_in)||60),end=Date.now()+ttl*1000;
+    const paint=()=>{cd.textContent="Auto-denies in "+Math.max(0,Math.ceil((end-Date.now())/1000))+" s if you do nothing.";};paint();
+    approvalTick=setInterval(paint,1000);
+    approvalTimer=setTimeout(()=>{clearApproval();status("Approval timed out. Nothing was changed.");},ttl*1000);
   }
   async function onMessage(event){
     let m;try{m=JSON.parse(event.data);}catch(_){return;}
