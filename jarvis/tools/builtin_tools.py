@@ -886,7 +886,7 @@ def _register_devops(r: ToolRegistry) -> None:
             ["service", "operation"],
         ),
         handler=lambda service, operation, args=None, profile=None, region=None, dry_run=False: awscli.run(service, operation, args, profile, region, dry_run=dry_run),
-        risk=Risk.HIGH, category="devops", requires_confirmation=True,
+        risk=Risk.HIGH, category="devops", requires_confirmation=True, never_auto_approve=True,
     ))
 
 
