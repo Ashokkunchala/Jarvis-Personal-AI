@@ -379,3 +379,29 @@ def test_brain_ask_falls_back_to_next_provider_before_output(monkeypatch) -> Non
     assert events[-1]["text"] == "fallback text"
     # History persisted once by the successful provider.
     assert len(brain.history) == 2
+
+
+# --------------------------------------------------------------- fail-closed gates
+def test_confirm_required_tool_is_denied_without_a_confirm_callback(registry: ToolRegistry) -> None:
+    """With no approval channel, a confirm-required tool must not run."""
+    result = asyncio.run(registry.execute("shutdown_pc", {"delay": 60}))
+    assert result.ok is False
+    assert result.cancelled is True
+
+
+def test_chained_shell_commands_are_never_classified_safe() -> None:
+    from jarvis.control import shell
+
+    assert shell.classify("dir") == "safe"
+    for cmd in ("echo hi && del file.txt", "dir & whoami", "echo x | more", "echo x > out.txt", "echo $(whoami)"):
+        assert shell.classify(cmd) == "confirm", cmd
+    assert shell.classify("rm -rf /") == "blocked"
+
+
+def test_entrypoint_scripts_compile() -> None:
+    import pathlib
+    import py_compile
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for name in ("jarvis_daemon.py", "run_enhanced.py", "jarvis_cli.py"):
+        py_compile.compile(str(root / name), doraise=True)
