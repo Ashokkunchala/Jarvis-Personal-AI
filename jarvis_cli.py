@@ -221,6 +221,10 @@ async def _stream_reply(brain, prompt: str, buffer: list[str]) -> None:
 @app.command()
 def tui():
     """Launch the realtime streaming terminal UI (local brain, no server)."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        err_console.print("[red]The terminal UI needs an interactive terminal.[/red] "
+                          "Use [bold]jarvis ask[/bold] for plain streamed output.")
+        raise typer.Exit(code=2)
     from jarvis.terminal.jarvis_tui import JarvisTUI
 
     console.print("[cyan]Launching JARVIS terminal UI…[/cyan]")
