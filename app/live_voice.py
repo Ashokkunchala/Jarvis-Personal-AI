@@ -34,6 +34,7 @@ from google import genai
 from google.genai import types
 from starlette.websockets import WebSocketState
 
+from app import live_tools
 from app.config import get_settings
 from app.personal_data import require_device_token
 from app.personality import SYSTEM_INSTRUCTIONS
@@ -179,7 +180,9 @@ async def live_voice(websocket: WebSocket):
                 "\nSpeak naturally and concisely as JARVIS, a personal assistant. "
                 "Do not claim an action was performed unless the connected tool reports success. "
                 "For consequential actions, ask for explicit confirmation."
+                + live_tools.VOICE_TOOL_INSTRUCTION
             ),
+            "tools": [{"function_declarations": live_tools.TOOL_DECLARATIONS}],
             "speech_config": {"voice_config": {"prebuilt_voice_config": {"voice_name": settings.gemini_live_voice}}},
             "input_audio_transcription": {},
             "output_audio_transcription": {},
@@ -199,6 +202,17 @@ async def live_voice(websocket: WebSocket):
                     # turn_complete; re-enter it so later turns keep flowing.
                     while True:
                         async for response in session.receive():
+                            tool_call = getattr(response, "tool_call", None)
+                            if tool_call and getattr(tool_call, "function_calls", None):
+                                responses = []
+                                for fc in tool_call.function_calls:
+                                    result = live_tools.response_payload(
+                                        await asyncio.to_thread(live_tools.execute, fc.name, dict(fc.args or {}))
+                                    )
+                                    await _send(websocket, {"type": "tool", "name": fc.name, "ok": bool(result.get("success"))})
+                                    responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"output": result}))
+                                await session.send_tool_response(function_responses=responses)
+                                continue
                             server_content = getattr(response, "server_content", None)
                             if not server_content:
                                 continue
