@@ -39,6 +39,8 @@
     const pcm=new Int16Array(bytes.buffer,bytes.byteOffset,bytes.byteLength/2),buffer=outputContext.createBuffer(1,pcm.length,24000),channel=buffer.getChannelData(0);
     for(let i=0;i<pcm.length;i++)channel[i]=pcm[i]/32768;
     const node=outputContext.createBufferSource();node.buffer=buffer;node.connect(outputContext.destination);
+    // Bound queued playback to 20 s so a slow device cannot build unbounded lag.
+    if(outputNextTime-outputContext.currentTime>20)return;
     const start=Math.max(outputContext.currentTime+0.01,outputNextTime);outputNextTime=start+buffer.duration;outputNodes.add(node);node.onended=()=>outputNodes.delete(node);node.start(start);
     setUi("speaking","JARVIS audio is streaming. Speak to interrupt.");
   }
@@ -46,6 +48,26 @@
     const el=$("liveVoiceTranscript");if(!el||!text)return;
     const line=(source==="user"?"You: ":"JARVIS: ")+text;
     el.textContent+=(el.textContent?"\n":"")+line;el.scrollTop=el.scrollHeight;
+  }
+  // Approval prompt for state-changing voice tools. Text is set with textContent
+  // only; the server treats anything but an explicit Approve as a denial.
+  let approvalBox=null,approvalTimer=null;
+  function clearApproval(){
+    if(approvalTimer){clearTimeout(approvalTimer);approvalTimer=null;}
+    if(approvalBox){approvalBox.remove();approvalBox=null;}
+  }
+  function showApproval(m){
+    clearApproval();
+    const anchor=$("liveVoiceTranscript");if(!anchor||typeof m.id!=="string")return;
+    const box=document.createElement("div");box.setAttribute("role","alertdialog");box.setAttribute("aria-label","Approve JARVIS action");
+    box.style.cssText="margin:.4rem 0;padding:.5rem;border:1px solid var(--muted,#888);border-radius:8px;font-size:.85rem";
+    const label=document.createElement("div");label.textContent="JARVIS asks to: "+String(m.summary||m.name||"make a change").slice(0,300);
+    const yes=document.createElement("button");yes.type="button";yes.className="primary";yes.textContent="Approve";
+    const no=document.createElement("button");no.type="button";no.textContent="Deny";
+    const answer=approve=>{send({type:"approval",id:m.id,approve:approve===true});clearApproval();status(approve?"Approved. Waiting for JARVIS to finish.":"Denied. Nothing was changed.");};
+    yes.addEventListener("click",()=>answer(true));no.addEventListener("click",()=>answer(false));
+    box.append(label,yes,no);anchor.after(box);approvalBox=box;yes.focus();
+    approvalTimer=setTimeout(()=>{clearApproval();status("Approval timed out. Nothing was changed.");},(Number(m.expires_in)||60)*1000);
   }
   async function onMessage(event){
     let m;try{m=JSON.parse(event.data);}catch(_){return;}
@@ -56,6 +78,8 @@
       case "transcript":showTranscript(m.source,m.text);break;
       case "turn_complete":status("Reply complete · live session remains open.");setUi("listening","Ready for your next utterance.");break;
       case "interrupted":stopPlayback();status("JARVIS audio interrupted.");setUi("listening","Listening for your next instruction.");break;
+      case "tool":status("Tool "+String(m.name)+(m.ok?" finished.":" did not run."),!m.ok);break;
+      case "approval_request":showApproval(m);break;
       case "error":status(m.message||"Live voice error.",true);break;
       case "closed":status("Live audio session closed.",true);break;
     }
@@ -75,7 +99,7 @@
     active=true;setUi("listening","Microphone is on. Audio is streaming to your JARVIS server.");status("Live microphone active. Select Stop Live Voice to disconnect.");
   }
   function releaseCapture(sendEnd=true){
-    active=false;
+    active=false;clearApproval();
     if(processor){processor.onaudioprocess=null;try{processor.disconnect();}catch(_){}processor=null;}
     if(source){try{source.disconnect();}catch(_){}source=null;}
     if(silentGain){try{silentGain.disconnect();}catch(_){}silentGain=null;}
