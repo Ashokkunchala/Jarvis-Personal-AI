@@ -348,3 +348,12 @@ def test_client_approval_prompt_is_pinned_on_narrow_screens_and_counts_down():
         assert needle in js
     assert "[role=alertdialog]{position:fixed" in html and "body.has-approval" in html
     assert "backdrop-filter" not in html  # it would turn position:fixed into position:absolute
+
+
+def test_client_reconnects_only_after_unclean_drops_and_never_leaves_mic_on():
+    from pathlib import Path
+    js = (Path(lv.__file__).parent / "static" / "live_voice.js").read_text(encoding="utf-8")
+    assert "!userStopped&&!event.wasClean&&![4401,4403,1013].includes(event.code)" in js
+    assert "attempt>4" in js and "1000*2**(attempt-1)" in js
+    assert "const abandoned=()=>userStopped||!socket||socket.readyState!==WebSocket.OPEN" in js
+    assert "does not remember what was said before the drop" in js
