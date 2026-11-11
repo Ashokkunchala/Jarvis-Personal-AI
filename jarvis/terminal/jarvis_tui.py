@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
+import os
+import shutil
 import time
 from datetime import datetime
 from typing import Any
@@ -19,7 +22,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Input, Markdown, Static
+from textual.widgets import Button, Footer, Input, Markdown, Static
 
 from jarvis.core.brain import JarvisBrain
 from jarvis.tools.registry import Tool
@@ -185,6 +188,116 @@ def _brief(value: Any, limit: int = 40) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+
+# ---------------------------------------------------------------------------
+# Cinematic widgets
+# ---------------------------------------------------------------------------
+CORE_W, CORE_H = 33, 13
+STATE_STYLE = {
+    "READY": "#38e8a0", "THINKING": "#ffc35a", "LISTENING": "#36d6ff", "TRANSCRIBING": "#36d6ff",
+    "AWAITING": "#ff9f43", "ERROR": "#ff5c6c", "STARTING": "#7aa7ff",
+}
+
+
+def _bar(percent: float | None, width: int = 14, invert: bool = False) -> Text:
+    """Unicode gauge. None means 'not measured' and is drawn as dashes, never as a value."""
+    if percent is None:
+        return Text("╌" * width + "  --", style="dim")
+    pct = max(0.0, min(100.0, float(percent)))
+    filled = int(round(pct / 100 * width))
+    hot = (100 - pct) if invert else pct
+    colour = "#ff5c6c" if hot >= 90 else "#ffc35a" if hot >= 75 else "#38e8a0"
+    return Text.assemble(("█" * filled, colour), ("░" * (width - filled), "#1c4f86"), (f" {pct:3.0f}%", colour))
+
+
+def core_lines(frame: int, state: str, simple: bool = False) -> list[Text]:
+    """Draw the AI core: a ring with a moving highlight around a JARVIS label.
+
+    Pure function of (frame, state) so it can be tested and screenshotted.
+    """
+    colour = STATE_STYLE.get(state, "#36d6ff")
+    if simple:
+        return [Text(f"[ JARVIS · {state} ]", style=f"bold {colour}")]
+    cx, cy = (CORE_W - 1) / 2, (CORE_H - 1) / 2
+    rx, ry = 15.0, 5.6
+    grid = [[" "] * CORE_W for _ in range(CORE_H)]
+    style = [[""] * CORE_W for _ in range(CORE_H)]
+    points = 64
+    active = state in {"THINKING", "LISTENING", "TRANSCRIBING", "AWAITING"}
+    head = (frame * (3 if active else 1)) % points
+    for i in range(points):
+        a = 2 * math.pi * i / points
+        x = int(round(cx + rx * math.cos(a)))
+        y = int(round(cy + ry * math.sin(a)))
+        dist = (head - i) % points
+        if dist < 10:
+            ch, st = ("●" if dist == 0 else "•"), colour
+        elif i % 2 == 0:
+            ch, st = "·", "#1c6fa8"
+        else:
+            continue
+        if 0 <= x < CORE_W and 0 <= y < CORE_H:
+            grid[y][x], style[y][x] = ch, st
+    # inner ring
+    rx2, ry2 = 9.0, 3.0
+    for i in range(48):
+        a = 2 * math.pi * i / 48 + (frame * 0.12 if active else 0)
+        x = int(round(cx + rx2 * math.cos(a)))
+        y = int(round(cy + ry2 * math.sin(a)))
+        if 0 <= x < CORE_W and 0 <= y < CORE_H and grid[y][x] == " ":
+            grid[y][x], style[y][x] = ("∙" if i % 3 else "∘"), "#2f8fd6"
+    label = "J A R V I S"
+    ly = int(cy)
+    lx = int(cx - len(label) / 2)
+    for k, ch in enumerate(label):
+        grid[ly][lx + k], style[ly][lx + k] = ch, "bold #e4f3ff"
+    sub = state
+    sx = int(cx - len(sub) / 2)
+    for k, ch in enumerate(sub):
+        grid[ly + 1][sx + k], style[ly + 1][sx + k] = ch, f"bold {colour}"
+    lines: list[Text] = []
+    for r in range(CORE_H):
+        t = Text()
+        for c in range(CORE_W):
+            t.append(grid[r][c], style=style[r][c] or None)
+        lines.append(t)
+    return lines
+
+
+class CoreWidget(Static):
+    """Animated AI core. Animation only reflects the app's real state."""
+
+    def __init__(self, simple: bool = False, **kw: Any) -> None:
+        super().__init__("", **kw)
+        self.state = "STARTING"
+        self.frame = 0
+        self.simple = simple
+
+    def tick(self) -> None:
+        self.frame += 1
+        self.refresh()
+
+    def render(self) -> Any:
+        out = Text(justify="center")
+        for i, line in enumerate(core_lines(self.frame, self.state, self.simple)):
+            if i:
+                out.append("\n")
+            out.append(line)
+        return out
+
+
+def _tool_present(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+DEVOPS_PROMPTS = {
+    "/tf": "Review this Terraform for security and reliability risks:\n",
+    "/docker": "Review this Dockerfile:\n",
+    "/cicd": "Review this CI/CD pipeline config:\n",
+    "/iam": "Review this IAM policy for least privilege:\n",
+    "/runbook": "Give me a troubleshooting runbook for ",
+}
+
 # ---------------------------------------------------------------------------
 # The app
 # ---------------------------------------------------------------------------
@@ -195,43 +308,41 @@ class JarvisTUI(App):
     SUB_TITLE = "laptop + android control"
 
     CSS = """
-    Screen { background: #070b10; }
-    Header { background: #0b3954; color: #ffffff; }
-    #status-bar { height: 3; dock: top; background: #0d1520; padding: 0 1; }
+    Screen { background: #02060f; color: #e4f3ff; }
+    #head { height: 5; dock: top; }
+    #topbar { height: 3; background: #04122a; border-bottom: heavy #1c6fa8; padding: 0 2; content-align: left middle; }
+    #status-bar { height: 1; background: #03102a; padding: 0 2; }
+    #foot { height: 7; dock: bottom; }
     #main { height: 1fr; }
-    #conversation {
-        width: 1fr; padding: 0 1; scrollbar-gutter: stable;
-        background: #070b10;
-    }
-    #sidebar {
-        width: 44; min-width: 34; background: #0a1119;
-        border-left: tall #14425c; padding: 0 1;
-    }
-    #side-title { color: #7ed6df; text-style: bold; height: 1; margin-top: 1; }
-    #tool-log { height: 1fr; scrollbar-gutter: stable; }
-    #sys-panel { height: auto; max-height: 12; border-top: tall #14425c; padding-top: 1; }
-    .user-msg {
-        background: #0f2a1c; color: #d1f7c4; padding: 1 1; margin: 1 0;
-        width: 100%; border-left: tall #2ecc71;
-    }
+    #left { width: 36; min-width: 34; }
+    #center { width: 1fr; min-width: 40; }
+    #sidebar { width: 40; min-width: 32; }
+    .hud { border: round #1c6fa8; background: #04122ad9; padding: 0 1; margin: 0 0 0 0; border-title-color: #36d6ff; border-title-style: bold; height: auto; }
+    #core { height: 15; width: 100%; content-align: center middle; border: round #1c6fa8; background: #03102a; border-title-color: #36d6ff; border-title-style: bold; }
+    #conversation { height: 1fr; padding: 0 1; scrollbar-gutter: stable; background: #02060f; border: round #1c4f86; border-title-color: #36d6ff; border-title-style: bold; }
+    #tool-log { height: 1fr; min-height: 6; scrollbar-gutter: stable; border: round #1c4f86; background: #03102a; border-title-color: #36d6ff; border-title-style: bold; }
+    #sys-panel { height: auto; }
+    #services { height: auto; }
+    #needs { height: auto; min-height: 3; }
+    #devops { height: auto; }
+    .user-msg { background: #062a22; color: #c8ffe6; padding: 0 1; margin: 1 0; width: 100%; border-left: thick #38e8a0; }
     .jarvis-msg { margin: 1 0; width: 100%; }
-    .sys-msg { color: #7f8fa6; padding: 0 1; margin: 1 0; width: 100%; }
-    .tool-entry {
-        width: 100%; height: auto; padding: 0 1; margin: 0 0;
-        background: #0d1520; color: #c8d6e5;
-    }
-    .risk-high { border-left: tall #e74c3c; }
-    .risk-medium { border-left: tall #f39c12; }
-    .risk-low { border-left: tall #3498db; }
-    .risk-safe { border-left: tall #27ae60; }
-    #input-bar {
-        height: 5; dock: bottom; background: #0d1520;
-        padding: 1 1; border-top: tall #14425c;
-    }
-    Input { background: #111a24; border: tall #1f6f8b; width: 1fr; }
-    #send-btn { width: 14; background: #1f6f8b; color: #fff; }
-    #stop-btn { width: 10; background: #6c1f1f; color: #fff; }\n    #mic-btn { width: 10; background: #145a32; color: #fff; }
-    #hint { height: 1; color: #4a6274; padding: 0 1; }
+    .sys-msg { color: #86a7c8; padding: 0 1; margin: 1 0; width: 100%; }
+    .tool-entry { width: 100%; height: auto; padding: 0 1; background: #04122a; color: #c8d6e5; }
+    .risk-high { border-left: thick #ff5c6c; }
+    .risk-medium { border-left: thick #ffc35a; }
+    .risk-low { border-left: thick #36d6ff; }
+    .risk-safe { border-left: thick #38e8a0; }
+    #input-bar { height: 5; background: #04122a; padding: 1 1; border-top: heavy #1c6fa8; }
+    Input { background: #030d20; border: tall #1c6fa8; width: 1fr; }
+    Input:focus { border: tall #36d6ff; }
+    #send-btn { width: 14; background: #0b7bb8; color: #fff; }
+    #stop-btn { width: 10; background: #7a0f1d; color: #fff; }
+    #mic-btn { width: 10; background: #0d6b4f; color: #fff; }
+    #hint { height: 1; color: #5b7a99; padding: 0 2; background: #02060f; }
+    .compact #left, .compact #sidebar { display: none; }
+    .short #core { display: none; }
+    .simple #core { display: none; }
     """
 
     BINDINGS = [
@@ -241,10 +352,19 @@ class JarvisTUI(App):
         Binding("f1", "help", "Help"),
         Binding("ctrl+space", "focus_input", "Focus", show=False),
         Binding("ctrl+t", "toggle_sidebar", "Sidebar", show=False),
+        Binding("f2", "focus_input", "Input", show=False),
+        Binding("f3", "toggle_sidebar", "Panels"),
+        Binding("f4", "stop_turn", "Stop"),
     ]
 
-    def __init__(self, brain: JarvisBrain | None = None) -> None:
+    def __init__(self, brain: JarvisBrain | None = None, simple: bool | None = None) -> None:
         super().__init__()
+        # Plain mode: NO_COLOR, dumb terminals or JARVIS_TUI_SIMPLE=1 drop the animation.
+        if simple is None:
+            simple = bool(os.getenv("NO_COLOR")) or os.getenv("TERM", "") == "dumb" or \
+                os.getenv("JARVIS_TUI_SIMPLE", "") == "1"
+        self.simple = simple
+        self.pending_tool: str | None = None
         self.brain = brain
         self.history_widgets: list[Any] = []
         self.live_markdown: Markdown | None = None
@@ -259,21 +379,26 @@ class JarvisTUI(App):
 
     # ------------------------------------------------------------- lifecycle
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
-        yield StatusBar(id="status-bar")
+        with Vertical(id="head"):
+            yield Static("", id="topbar")
+            yield StatusBar(id="status-bar")
         with Horizontal(id="main"):
+            with Vertical(id="left"):
+                yield CoreWidget(simple=self.simple, id="core")
+                yield Static("", id="sys-panel", classes="hud")
+                yield Static("", id="services", classes="hud")
             yield VerticalScroll(id="conversation")
             with Vertical(id="sidebar"):
-                yield Static("TOOL ACTIVITY", id="side-title")
+                yield Static("", id="needs", classes="hud")
+                yield Static("", id="devops", classes="hud")
                 yield VerticalScroll(id="tool-log")
-                yield Static("", id="sys-panel")
-        with Horizontal(id="input-bar"):
-            yield Input(placeholder="Ask JARVIS…   /help for commands", id="cmd", suggester=None)
-            yield Button("MIC", id="mic-btn", variant="success")
-            yield Button("STOP", id="stop-btn", variant="error")
-            yield Button("SEND", id="send-btn", variant="primary")
-        yield Static("Enter sends · MIC records one utterance · F1 help · Ctrl+L clear · Ctrl+Q quit", id="hint")
-        yield Footer()
+        with Vertical(id="foot"):
+            with Horizontal(id="input-bar"):
+                yield Input(placeholder="Ask JARVIS…   /help for commands", id="cmd", suggester=None)
+                yield Button("MIC", id="mic-btn", variant="success")
+                yield Button("STOP", id="stop-btn", variant="error")
+                yield Button("SEND", id="send-btn", variant="primary")
+            yield Static("Enter send · F1 help · F2 input · F3 panels · F4 stop · Ctrl+L clear · Ctrl+Q quit", id="hint")
 
     async def on_mount(self) -> None:
         if self.brain is None:
@@ -282,6 +407,16 @@ class JarvisTUI(App):
         self.query_one("#mic-btn", Button).disabled = False
         self.query_one("#cmd", Input).focus()
         self.set_interval(2.0, self.refresh_status)
+        self.set_interval(0.12 if not self.simple else 1.0, self._tick)
+        self.query_one("#conversation").border_title = "CONVERSATION"
+        self.query_one("#tool-log").border_title = "TOOL ACTIVITY"
+        self.query_one("#core").border_title = "CORE"
+        self.query_one("#sys-panel").border_title = "SYSTEM"
+        self.query_one("#services").border_title = "SERVICES"
+        self.query_one("#needs").border_title = "NEEDS YOU"
+        self.query_one("#devops").border_title = "AWS DEVOPS"
+        self._apply_layout(self.size.width, self.size.height)
+        self._render_static_panels()
         self.refresh_status()
 
         self._sys("JARVIS online — direct AI tool loop (Gemini/OpenRouter/Groq), no server required.")
@@ -294,6 +429,57 @@ class JarvisTUI(App):
                       f"[cyan]{len(self.brain.registry)} tools[/cyan] · type /tools to inspect")
         self._sys("Ask anything, or try: “set volume to 20”, “open chrome and screenshot”, “battery status”.")
 
+    # ---------------------------------------------------------- layout/panels
+    def on_resize(self, event: Any) -> None:
+        self._apply_layout(event.size.width, event.size.height)
+
+    def _apply_layout(self, width: int, height: int) -> None:
+        self.set_class(width < 110, "compact")
+        self.set_class(height < 32, "short")
+        self.set_class(self.simple, "simple")
+
+    def _tick(self) -> None:
+        try:
+            core = self.query_one("#core", CoreWidget)
+            top = self.query_one("#topbar", Static)
+        except Exception:  # pragma: no cover - during teardown
+            return
+        if not self.simple:
+            core.tick()
+        top.update(self._topbar_text())
+
+    def _topbar_text(self) -> Text:
+        state = getattr(self.query_one("#core", CoreWidget), "state", "STARTING")
+        colour = STATE_STYLE.get(state, "#36d6ff")
+        return Text.assemble(
+            ("◢◤ ", "#36d6ff"), ("JARVIS", "bold #e4f3ff"), (" · COMMAND CENTRE", "#36d6ff"),
+            ("    ● ", colour), (state, f"bold {colour}"),
+            ("    " + datetime.now().strftime("%a %d %b  %H:%M:%S"), "#86a7c8"),
+        )
+
+    def _render_static_panels(self) -> None:
+        """AWS DevOps panel: what is installed locally. No credential or network access."""
+        rows = Text()
+        for name in ("aws", "terraform", "kubectl", "docker"):
+            ok = _tool_present(name)
+            rows.append("✔ " if ok else "✘ ", style="#38e8a0" if ok else "#5b7a99")
+            rows.append(f"{name:<10}", style="#e4f3ff" if ok else "#5b7a99")
+            rows.append("on PATH\n" if ok else "not found\n", style="dim")
+        rows.append("AWS access: read-only tools,\nchanges always ask. Not\nchecked from this panel.\n", style="dim")
+        rows.append("/tf /docker /cicd /iam /runbook", style="#36d6ff")
+        self.query_one("#devops", Static).update(rows)
+        self._render_needs()
+
+    def _render_needs(self) -> None:
+        text = Text()
+        if self.pending_tool:
+            text.append("⚠ Approval waiting\n", style="bold #ff9f43")
+            text.append(f"{self.pending_tool}\n", style="#e4f3ff")
+            text.append("y approve · n reject", style="dim")
+        else:
+            text.append("Nothing waiting for you.", style="dim")
+        self.query_one("#needs", Static).update(text)
+
     # --------------------------------------------------------------- status
     def refresh_status(self) -> None:
         if self.brain is None:
@@ -304,6 +490,9 @@ class JarvisTUI(App):
         data["providers"] = ", ".join(self.brain.provider_candidates())
         data["tools"] = len(self.brain.registry)
         data["state"] = "THINKING" if self.busy else ("READY" if self.brain.configured else "ERROR")
+        core = self.query_one("#core", CoreWidget)
+        if core.state == "STARTING":
+            core.state = data["state"]
         if self.turn_started:
             data.setdefault("elapsed", round(time.time() - self.turn_started, 1))
         # Snapshot off the UI thread so slow I/O never stalls the interface.
@@ -324,25 +513,33 @@ class JarvisTUI(App):
     def _render_sys_panel(self, snap: dict[str, Any]) -> None:
         laptop = snap.get("laptop") or {}
         android = snap.get("android") or {}
-        lines: list[str] = ["[dim]SYSTEM[/dim]"]
+        t = Text()
         if laptop.get("success"):
-            lines.append(f"CPU {laptop.get('cpu_percent', 0):.0f}% · RAM {laptop.get('memory_percent', 0):.0f}%")
-            lines.append(f"disk free {laptop.get('disk_free_gb')} GB")
+            t.append("CPU  ", style="dim"); t.append(_bar(laptop.get("cpu_percent"))); t.append("\n")
+            t.append("RAM  ", style="dim"); t.append(_bar(laptop.get("memory_percent"))); t.append("\n")
             bat = laptop.get("battery_percent")
+            t.append("BAT  ", style="dim"); t.append(_bar(bat, invert=True))
             if bat is not None:
-                plug = "charging" if laptop.get("battery_plugged") else "on battery"
-                lines.append(f"battery {bat}% ({plug})")
+                t.append("  AC" if laptop.get("battery_plugged") else "  batt", style="dim")
+            t.append("\n")
+            t.append(f"disk free {laptop.get('disk_free_gb')} GB", style="dim")
         else:
-            lines.append(f"[red]{_brief(laptop.get('error', 'unavailable'), 40)}[/red]")
-        if android.get("connected"):
-            info = android.get("battery") or {}
-            lines.append("[green]phone connected[/green]" +
-                         (f" · {info.get('percent')}%" if info.get("success") else ""))
-        else:
-            lines.append("[dim]phone: not connected[/dim]")
-        lines.append(f"[dim]history {len(self.brain.history)} messages[/dim]")
-        panel = self.query_one("#sys-panel", Static)
-        panel.update("\n".join(lines))
+            t.append(f"unavailable: {_brief(laptop.get('error', 'no data'), 40)}", style="#ff5c6c")
+        self.query_one("#sys-panel", Static).update(t)
+
+        v = Text()
+        configured = bool(getattr(self.brain, "configured", False))
+        providers = ", ".join(self.brain.provider_candidates()) if configured else ""
+        v.append("AI provider  ", style="dim")
+        v.append((providers or "none") if configured else "no key set", style="#38e8a0" if configured else "#ff5c6c")
+        v.append("\nmodel        ", style="dim"); v.append(_brief(str(self.brain.active_model), 20), style="#c792ff")
+        v.append("\ntools        ", style="dim"); v.append(str(len(self.brain.registry)), style="#36d6ff")
+        v.append("\nphone        ", style="dim")
+        v.append("connected" if android.get("connected") else "not connected",
+                 style="#38e8a0" if android.get("connected") else "#5b7a99")
+        v.append("\nvoice        ", style="dim"); v.append("MIC button", style="#86a7c8")
+        v.append("\nhistory      ", style="dim"); v.append(f"{len(self.brain.history)} msgs", style="#86a7c8")
+        self.query_one("#services", Static).update(v)
 
     # ---------------------------------------------------------------- input
     async def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -542,7 +739,12 @@ class JarvisTUI(App):
         return confirm
 
     def _show_confirm(self, tool: Tool, args: dict[str, Any], future: asyncio.Future[bool]) -> None:
+        self.pending_tool = tool.name
+        self._render_needs()
+
         def done(approved: bool | None) -> None:
+            self.pending_tool = None
+            self._render_needs()
             if future.done():
                 return
             future.set_result(bool(approved))
@@ -626,6 +828,7 @@ class JarvisTUI(App):
 
     # --------------------------------------------------------------- misc
     def _set_status(self, state: str) -> None:
+        self.query_one("#core", CoreWidget).state = state
         bar = self.query_one("#status-bar", StatusBar)
         data = dict(getattr(bar, "data", {}) or {})
         data["state"] = state
@@ -657,6 +860,11 @@ class JarvisTUI(App):
     def action_toggle_sidebar(self) -> None:
         sidebar = self.query_one("#sidebar")
         sidebar.display = not sidebar.display
+
+    def action_stop_turn(self) -> None:
+        if self.busy:
+            self.stop_requested = True
+            self._sys("[yellow]stopping after current step…[/yellow]")
 
     def action_copy_last(self) -> None:
         if self.last_reply:
