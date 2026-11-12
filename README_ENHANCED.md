@@ -1,8 +1,7 @@
 # JARVIS Personal AI - Enhanced Backend
 
 This document describes the enhanced FastAPI backend (`app.main_enhanced:app`),
-which is the entry point used by `jarvis serve`, the Windows start scripts and
-the Docker image.
+which is the entry point used by `jarvis serve` and the Windows start scripts.
 
 > **Status: local prototype, not production-ready.** Bind the server to
 > `127.0.0.1` and keep it on a trusted machine. There is no public deployment
@@ -26,20 +25,7 @@ not include `/ws` or device management.
 
 ## Quick start
 
-### Docker Compose
-
-```bash
-cp .env.example .env
-# Edit .env: set JARVIS_API_TOKEN (32+ random characters) and one provider key
-docker compose up -d
-# The published port is 127.0.0.1:8000 only.
-```
-
-The image runs as an unprivileged user, drops Linux capabilities and mounts only
-`./data`. If `./data` does not exist, create it first so the container user can
-write the SQLite database.
-
-### Python
+### Python (local, no containers)
 
 ```powershell
 py -m venv .venv
