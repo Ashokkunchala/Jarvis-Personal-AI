@@ -3,7 +3,7 @@
 
 Three tiers of entry:
 
-* ``jarvis tui``   - realtime streaming terminal UI against the local tool loop
+* ``jarvis robot`` - animated floating robot for the terminal (alias: ``jarvis tui``)
 * ``jarvis ask``   - one-shot / interactive streamed replies (no server needed)
 * ``jarvis laptop``/``jarvis android`` - direct device control with rich output
 * ``jarvis serve`` - the HTTP/WebSocket backend for browser and remote clients
@@ -12,7 +12,6 @@ Three tiers of entry:
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import os
 import secrets
@@ -30,10 +29,23 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 app = typer.Typer(
     name="jarvis",
-    help="JARVIS Personal AI — streaming assistant, laptop control, Android control.",
-    no_args_is_help=True,
+    help="JARVIS Personal AI — floating robot, streaming assistant, laptop control, Android control.",
+    invoke_without_command=True,
     pretty_exceptions_enable=False,
 )
+
+
+@app.callback()
+def _default_entry(
+    ctx: typer.Context,
+    call: bool = typer.Option(False, "--call", help="Dial the live voice call on start."),
+    no_laptop: bool = typer.Option(False, "--no-laptop", help="Hide the laptop gauge."),
+) -> None:
+    """Start the floating robot when no subcommand is supplied."""
+    if ctx.invoked_subcommand is None:
+        from jarvis.terminal.robot import run
+
+        raise typer.Exit(code=run(laptop=not no_laptop, start_call=call))
 android_app = typer.Typer(help="Control a connected Android phone over ADB.", no_args_is_help=True)
 laptop_app = typer.Typer(help="Control this Windows laptop.", no_args_is_help=True)
 app.add_typer(android_app, name="android")
@@ -219,17 +231,68 @@ async def _stream_reply(brain, prompt: str, buffer: list[str]) -> None:
     console.print()
 
 
-@app.command()
-def tui():
-    """Launch the realtime streaming terminal UI (local brain, no server)."""
-    if not (sys.stdin.isatty() and sys.stdout.isatty()):
-        err_console.print("[red]The terminal UI needs an interactive terminal.[/red] "
-                          "Use [bold]jarvis ask[/bold] for plain streamed output.")
-        raise typer.Exit(code=2)
-    from jarvis.terminal.jarvis_tui import JarvisTUI
+def _run_robot(
+    *,
+    frames: int | None = None,
+    fps: float = 20.0,
+    ascii_mode: bool | None = None,
+    color: bool | None = None,
+    dump: bool = False,
+    call: bool = False,
+    laptop: bool = True,
+) -> None:
+    """Launch the animated floating robot (standard library animation)."""
+    from jarvis.terminal.robot import run
 
-    console.print("[cyan]Launching JARVIS terminal UI…[/cyan]")
-    JarvisTUI().run()
+    raise typer.Exit(
+        code=run(
+            frames=frames,
+            fps=fps,
+            ascii_mode=ascii_mode,
+            color=color,
+            dump=dump,
+            laptop=laptop,
+            start_call=call,
+        )
+    )
+
+
+@app.command()
+def robot(
+    frames: int | None = typer.Option(
+        None, "--frames", "-n", min=1, help="Render N frames then exit."
+    ),
+    fps: float = typer.Option(20.0, "--fps", min=1.0, max=60.0, help="Frames per second."),
+    ascii_mode: bool = typer.Option(False, "--ascii", help="Force plain ASCII art."),
+    unicode_mode: bool = typer.Option(False, "--unicode", help="Force Unicode box art."),
+    no_color: bool = typer.Option(False, "--no-color", help="Disable ANSI colour."),
+    dump: bool = typer.Option(False, "--dump", help="Print frames instead of redrawing."),
+    call: bool = typer.Option(False, "--call", help="Dial the live voice call on start."),
+    no_laptop: bool = typer.Option(False, "--no-laptop", help="Hide the laptop gauge."),
+):
+    """Launch the animated floating JARVIS robot (the default command)."""
+    if ascii_mode and unicode_mode:
+        err_console.print("[red]Use only one of --ascii or --unicode.[/red]")
+        raise typer.Exit(code=2)
+    mode: bool | None = True if ascii_mode else False if unicode_mode else None
+    _run_robot(
+        frames=frames,
+        fps=fps,
+        ascii_mode=mode,
+        color=False if no_color else None,
+        dump=dump,
+        call=call,
+        laptop=not no_laptop,
+    )
+
+
+@app.command()
+def tui(
+    call: bool = typer.Option(False, "--call", help="Dial the live voice call on start."),
+    no_laptop: bool = typer.Option(False, "--no-laptop", help="Hide the laptop gauge."),
+):
+    """Alias for ``jarvis robot`` (kept for backwards compatibility)."""
+    _run_robot(call=call, laptop=not no_laptop)
 
 
 @app.command()
@@ -416,56 +479,85 @@ def chat(message: str = typer.Argument(None, help="Optional first message; omit 
 @app.command()
 def start():
     """Start JARVIS in real-time voice mode ('Hey JARVIS' + Gemini Live + tools)."""
+    _launch_voice(call_mode=False)
+
+
+@app.command()
+def call():
+    """Answer a live voice call: speak immediately, no wake word, hang up with Ctrl+C."""
+    _launch_voice(call_mode=True)
+
+
+def _launch_voice(*, call_mode: bool) -> None:
+    """Shared preflight and launcher for ``jarvis start`` and ``jarvis call``."""
     from jarvis.config.settings import config
+    from jarvis.terminal.voice import missing_voice_packages
 
     if not config.gemini_api_key.strip():
         err_console.print(
-            "[red]GEMINI_API_KEY is not set[/red] — add it to .env, then run 'jarvis start' again."
+            "[red]GEMINI_API_KEY is not set[/red] — add it to .env, then try again."
         )
         raise typer.Exit(code=1)
 
-    missing = [
-        package
-        for package in ("sounddevice", "webrtcvad", "openwakeword", "numpy", "scipy")
-        if importlib.util.find_spec(package) is None
-    ]
+    missing = missing_voice_packages()
     if missing:
         err_console.print(
             "[red]Voice stack is not installed[/red] — missing: "
             + ", ".join(missing)
             + ".\nThe wake word, microphone loop and VAD run locally and need these packages. "
             "Install them with: [bold]pip install -r requirements-jarvis.txt[/bold] "
-            "(PyAudio needs PortAudio build headers on Linux). The typed 'jarvis ask' "
-            "and 'jarvis tui' modes work without them."
+            "(PyAudio needs PortAudio build headers on Linux). The floating 'jarvis' robot "
+            "and typed 'jarvis ask' mode work without them."
         )
         raise typer.Exit(code=1)
 
-    console.print(
-        Panel.fit(
-            "[bold cyan]JARVIS[/bold cyan] realtime voice\n"
-            f"model [magenta]{config.gemini_live_model}[/magenta] · "
-            f"voice [magenta]{config.gemini_live_voice}[/magenta] · "
-            f"wake word [magenta]hey jarvis[/magenta] · "
-            f"idle timeout [magenta]{config.awake_timeout_seconds:g}s[/magenta]\n"
-            "[dim]Ctrl+C shuts JARVIS down[/dim]",
-            border_style="cyan",
+    if call_mode:
+        console.print(
+            Panel.fit(
+                "[bold cyan]JARVIS[/bold cyan] live voice call\n"
+                f"model [magenta]{config.gemini_live_model}[/magenta] · "
+                f"voice [magenta]{config.gemini_live_voice}[/magenta] · "
+                "[magenta]no wake word[/magenta]\n"
+                "[dim]Speak any time — Ctrl+C hangs up[/dim]",
+                border_style="cyan",
+            )
         )
-    )
-    asyncio.run(start_realtime())
+    else:
+        console.print(
+            Panel.fit(
+                "[bold cyan]JARVIS[/bold cyan] realtime voice\n"
+                f"model [magenta]{config.gemini_live_model}[/magenta] · "
+                f"voice [magenta]{config.gemini_live_voice}[/magenta] · "
+                f"wake word [magenta]hey jarvis[/magenta] · "
+                f"idle timeout [magenta]{config.awake_timeout_seconds:g}s[/magenta]\n"
+                "[dim]Ctrl+C shuts JARVIS down[/dim]",
+                border_style="cyan",
+            )
+        )
+    asyncio.run(start_realtime(call_mode=call_mode))
 
 
 def _voice_event_printer(kind: str, payload: dict) -> None:
     """Render realtime voice events in the terminal."""
     if kind == "ready":
         tools = payload.get("tools", 0)
-        console.print(
-            f"[green]ok[/green] microphone online · "
-            f"[cyan]{tools}[/cyan] voice tools · say [bold]'Hey JARVIS'[/bold] to talk"
-        )
+        if payload.get("call_mode"):
+            console.print(
+                f"[green]ok[/green] microphone online · "
+                f"[cyan]{tools}[/cyan] voice tools · [bold]call mode[/bold] — speak any time"
+            )
+        else:
+            console.print(
+                f"[green]ok[/green] microphone online · "
+                f"[cyan]{tools}[/cyan] voice tools · say [bold]'Hey JARVIS'[/bold] to talk"
+            )
     elif kind == "live_ready":
         console.print(f"[green]ok[/green] Gemini Live session open ([dim]{payload.get('model')}[/dim])")
     elif kind == "wake":
-        console.print("[bold yellow]*[/bold yellow] [bold]JARVIS is awake[/bold] — go ahead")
+        if payload.get("mode") == "call":
+            console.print("[bold yellow]*[/bold yellow] [bold]Call live[/bold] — go ahead")
+        else:
+            console.print("[bold yellow]*[/bold yellow] [bold]JARVIS is awake[/bold] — go ahead")
     elif kind == "transcript":
         if payload.get("source") == "user":
             console.print(f"[bold green]You ›[/bold green] {payload.get('text', '')}")
@@ -491,7 +583,7 @@ def _voice_event_printer(kind: str, payload: dict) -> None:
         console.print(f"[red]![/red] {payload.get('message', 'voice error')}")
 
 
-async def start_realtime():
+async def start_realtime(call_mode: bool = False):
     import logging
 
     from jarvis.core.jarvis_unified import JarvisUnified
@@ -513,7 +605,7 @@ async def start_realtime():
         raise typer.Exit(code=1) from exc
     console.print("[green]ok[/green] All systems online")
     try:
-        await jarvis.start_realtime()
+        await jarvis.start_realtime(call_mode=call_mode)
     except KeyboardInterrupt:
         pass
     finally:

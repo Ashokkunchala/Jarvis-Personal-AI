@@ -8,6 +8,10 @@ awake     microphone frames stream to Gemini Live; replies play through the
           configurable idle timeout with nothing said or played, JARVIS goes
           back to sleep and waits for the wake word again.
 
+Call mode (``start(call_mode=True)``) skips the wake word entirely: the agent
+starts awake, streams the microphone immediately and never idles back to sleep.
+It is what the floating robot's ``v`` key and ``jarvis call`` use.
+
 Everything that must run on the asyncio loop is marshalled off the PortAudio
 callback thread with ``call_soon_threadsafe``.
 """
@@ -59,6 +63,7 @@ class JarvisAgent:
 
         self.state = SLEEPING
         self.is_listening = False
+        self.call_mode = False
         self._loop: asyncio.AbstractEventLoop | None = None
         self._mic_queue: asyncio.Queue[bytes] | None = None
         self._pump_task: asyncio.Task | None = None
@@ -108,23 +113,36 @@ class JarvisAgent:
         self._pump_task = asyncio.create_task(self._mic_pump())
         logger.info("JARVIS voice agent initialized")
 
-    async def start(self) -> None:
-        """Run the realtime loop until cancelled."""
+    async def start(self, call_mode: bool = False) -> None:
+        """Run the realtime loop until cancelled.
+
+        With ``call_mode=True`` JARVIS is awake from the first frame: no wake
+        word is required and the idle timeout is disabled. Everything else -
+        microphone streaming, barge-in, tools and spoken replies - is identical.
+        """
         self._loop = asyncio.get_running_loop()
         self.is_listening = True
+        self.call_mode = bool(call_mode)
         self.audio.start_input(self.on_audio_frame)
         self._emit(
             "ready",
             {
-                "wake_word": "hey jarvis" if config.wakeword_enabled else "voice start",
+                "wake_word": "call" if self.call_mode else (
+                    "hey jarvis" if config.wakeword_enabled else "voice start"
+                ),
                 "model": config.gemini_live_model,
                 "tools": len(TOOL_DECLARATIONS)
                 if config.voice_tools_enabled and self._tool_executor
                 else 0,
                 "awake_timeout": config.awake_timeout_seconds,
+                "call_mode": self.call_mode,
             },
         )
-        logger.info("Always listening for 'Hey JARVIS'...")
+        if self.call_mode:
+            await self._begin_call()
+            logger.info("Voice call live - speak any time")
+        else:
+            logger.info("Always listening for 'Hey JARVIS'...")
         try:
             while True:
                 await asyncio.sleep(0.2)
@@ -136,6 +154,7 @@ class JarvisAgent:
 
     async def stop(self) -> None:
         self.is_listening = False
+        self.call_mode = False
         try:
             self.audio.stop_input()
         except Exception:  # noqa: BLE001
@@ -217,6 +236,12 @@ class JarvisAgent:
     # ------------------------------------------------------------------
     # state transitions
     # ------------------------------------------------------------------
+    async def _begin_call(self) -> None:
+        """Enter call mode without a wake word, playing the same go-ahead chime."""
+        if not self.is_listening:
+            return
+        await self._wake(1.0)
+
     async def _wake(self, confidence: float) -> None:
         if self.state != SLEEPING or not self.is_listening:
             return
@@ -225,8 +250,17 @@ class JarvisAgent:
         self.vad.reset()
         self.wakeword.reset()
         self.audio.play_chime()
-        self._emit("wake", {"confidence": round(confidence, 3)})
-        logger.info("Wake word detected (score %.3f) - JARVIS is awake", confidence)
+        self._emit(
+            "wake",
+            {
+                "confidence": round(confidence, 3),
+                "mode": "call" if self.call_mode else "wake",
+            },
+        )
+        if self.call_mode:
+            logger.info("Call mode started - JARVIS is awake")
+        else:
+            logger.info("Wake word detected (score %.3f) - JARVIS is awake", confidence)
 
     async def _sleep(self) -> None:
         if self.state != AWAKE:
@@ -244,8 +278,8 @@ class JarvisAgent:
         logger.info("JARVIS went back to sleep")
 
     async def _check_idle(self) -> None:
-        if self.state != AWAKE:
-            return
+        if self.state != AWAKE or self.call_mode:
+            return  # a live call stays connected until the user hangs up
         if self.audio.output_pending():
             return  # still speaking
         if time.monotonic() - self._last_activity >= config.awake_timeout_seconds:

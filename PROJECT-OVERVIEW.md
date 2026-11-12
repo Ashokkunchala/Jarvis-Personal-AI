@@ -191,7 +191,7 @@ Content-Type: application/json
 - **Storage**: Local storage for preferences
 
 ### Desktop Terminal
-- **UI**: Textual streaming interface
+- **UI**: Floating robot with live laptop gauges and an on-demand voice call
 - **Tools**: 137 typed tools across 20 categories
 - **Control**: Windows/Android device management
 

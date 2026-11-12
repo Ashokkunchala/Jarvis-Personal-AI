@@ -68,13 +68,51 @@ notepad .env
 
 Set at least one provider key: `GEMINI_API_KEY` from https://aistudio.google.com/, `OPENROUTER_API_KEY` from https://openrouter.ai/keys, or `GROQ_API_KEY` from https://console.groq.com/keys. Optionally set `JARVIS_AI_PROVIDER` to `gemini`, `openrouter`, `groq` or `auto` (default) to control the failover order. Keep real credentials in the local `.env` only; do not commit the file. Any single configured key is enough for the direct terminal assistant.
 
-## 5. Launch the realtime terminal
+## 5. Launch the floating robot and chat
 
 ```powershell
-.\.venv\Scripts\python.exe jarvis_cli.py tui
+# Floating robot (the default command) with laptop CPU/RAM/battery/disk gauges.
+# No API key or network is used unless you press v to start a voice call.
+.\.venv\Scripts\python.exe jarvis_cli.py
+
+# Live voice call: speak immediately, no "Hey JARVIS" wake word.
+.\.venv\Scripts\python.exe jarvis_cli.py call
+
+# Streaming chat in the current pane.
+.\.venv\Scripts\python.exe jarvis_cli.py ask "What is my battery status?"
 ```
 
-The terminal streams model text as it arrives, displays tool calls and their outcomes, and refreshes system telemetry. Try a read-only request first, such as “Check my laptop battery and system status.” Tool actions that require confirmation should still ask before running.
+The robot hovers, blinks and flickers its thruster in place and draws a cached
+laptop gauge (`psutil` is used when available). Keys: `q` or `Esc` quit,
+`space` pause, `v` start/end a live voice call, `a` toggle ASCII art, `+`/`-`
+change speed, `h` hide the hints. `jarvis tui` is kept as an alias for
+`jarvis robot`. On a terminal that cannot render box-drawing glyphs the ASCII
+art is chosen automatically; pass `--ascii` to force it, `--no-color` for plain
+output, `--no-laptop` to hide the gauge, `--call` to dial immediately, or
+`--frames N --dump` to render a finite number of frames (useful for screenshots
+and pipes).
+
+### Start the robot automatically at sign-in (optional)
+
+```powershell
+# Robot only; the microphone stays closed until you press v.
+.\scripts\install-jarvis-startup.ps1
+
+# Start with a live call immediately (the microphone opens at sign-in).
+.\scripts\install-jarvis-startup.ps1 -Call
+
+# Remove the shortcut.
+.\scripts\install-jarvis-startup.ps1 -Remove
+```
+
+The script writes `JARVIS.lnk` to your per-user Startup folder
+(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`) and launches
+`scripts\start-jarvis-terminal.ps1` in the repo. It does not need the backend or
+a browser. Use `-NoLaptop` to start without the gauge.
+
+`jarvis ask` streams model text as it arrives, displays tool calls and their
+outcomes, and asks before running risky tools. Try a read-only request first,
+such as “Check my laptop battery and system status.”
 
 Other useful commands:
 
@@ -84,15 +122,25 @@ Other useful commands:
 .\.venv\Scripts\python.exe jarvis_cli.py tools
 ```
 
-## 6. Use terminal microphone input
+## 6. Voice and microphone input
 
-In the TUI, click **MIC** to capture one utterance. Speak after the listening message; the transcript is then submitted to the normal Gemini tool-calling loop. Click MIC again for another utterance.
+The floating robot animation does not touch the microphone. Press `v` inside the
+robot (or run `jarvis call`) to open a live Gemini call in a background thread:
+it starts awake, so you can speak immediately without the wake word. Run
+`jarvis start` if you prefer the local `Hey JARVIS` wake word, or use the Live
+Voice controls in the browser UI.
 
 - Allow microphone access in Windows Settings → Privacy & security → Microphone.
 - Use a working default recording device in Windows Sound settings.
-- This is push-to-capture, one utterance at a time. It is **not** an always-on microphone or a “Hey JARVIS” wake-word listener.
-- The current transcription adapter uses Google Speech Recognition and sends the captured speech audio to that service for transcription. Do not use it for sensitive conversations if that data flow is unsuitable.
-- If the optional audio backend fails to install or cannot open the microphone, inspect the full error and your Python architecture/version before trying a compatible PyAudio wheel. Do not install random binaries from untrusted websites.
+- The browser Live Voice session is explicit: it starts when you press the
+  button and stops when you press Stop. It is not a hidden always-on recorder.
+- The current terminal transcription adapter uses Google Speech Recognition and
+  sends the captured speech audio to that service for transcription. Do not use
+  it for sensitive conversations if that data flow is unsuitable.
+- If the optional audio backend fails to install or cannot open the microphone,
+  inspect the full error and your Python architecture/version before trying a
+  compatible PyAudio wheel. Do not install random binaries from untrusted
+  websites.
 
 ## 7. Run checks
 
@@ -114,16 +162,27 @@ Automated tests do not prove the microphone works on your specific laptop. Verif
 
 The direct terminal can execute laptop actions through its tool registry. Keep confirmation prompts enabled for risky actions; do not pre-approve tools you do not trust. The local web backend should remain bound to localhost and must not be exposed to the public internet without a security review.
 
-## Cinematic terminal (`jarvis tui`)
+## Floating robot (`jarvis` or `jarvis robot`)
 
-Run `jarvis tui` in an interactive terminal (a truecolor terminal looks best).
-Keys: Enter send, F1 help, F2 focus input, F3 show/hide side panels, F4 stop the
-current turn, Ctrl+L clear, Ctrl+Q quit. Risky tools still open an approval
-dialog (y approve, n or Esc reject); rejecting is the default outcome.
+Run `jarvis` with no arguments (or `jarvis robot`) in any terminal; a truecolour
+terminal looks best. `jarvis tui` is an alias.
 
-- Panels show real state only. Values that are not measured appear as dashes,
-  and the AWS DevOps panel only reports which CLIs are on PATH. It does not read
-  credentials or call AWS.
-- Small terminals (under 110 columns or 32 rows) hide side panels and the core.
-- `NO_COLOR`, `TERM=dumb` or `JARVIS_TUI_SIMPLE=1` turns off the animation.
-- Not an interactive terminal: use `jarvis ask` instead.
+- Keys: `q`/`Esc` quit, `space` pause, `v` start/end a live voice call, `a`
+  toggle ASCII art, `+`/`-` change speed, `h` toggle the hints.
+- It shows a live clock, an `ONLINE`/`PAUSED`/`CALL` status and a cached
+  CPU/RAM/battery/free-disk gauge. The gauge needs `psutil`; hide it with
+  `--no-laptop` or if the package is missing.
+- `v` dials a Gemini Live call in a background thread (`jarvis/terminal/voice.py`
+  + `JarvisAgent(call_mode=True)`). It needs `GEMINI_API_KEY` and the realtime
+  audio stack (`sounddevice`, `webrtcvad`, `openwakeword`, `numpy`, `scipy`,
+  `google-genai`). When they are missing the robot shows `VOICE ERR` with the
+  reason and does not open the microphone.
+- `jarvis call` runs the same call without the robot; `jarvis start` keeps the
+  local wake-word flow. All three share the same microphone, barge-in, tools and
+  spoken replies.
+- `JARVIS_ROBOT_ASCII=1`, `JARVIS_ROBOT_NO_COLOR=1` or `NO_COLOR` control the
+  rendering. `--frames N --dump` renders frames without redrawing (for logs,
+  screenshots or pipes).
+- The animation and gauge never call a model or the network. A call is only
+  opened when you press `v` or pass `--call`, and the audio packages are
+  imported only at that point.

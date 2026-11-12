@@ -48,7 +48,6 @@ pyautogui-screenshot
 
 # UI
 rich>=13.8.0
-textual>=0.79.0
 prompt-toolkit>=3.0.47
 PyQt6>=6.7.1
 pyqtgraph>=0.13.7

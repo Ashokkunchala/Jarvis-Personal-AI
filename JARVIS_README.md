@@ -11,8 +11,9 @@ The ultimate real-time AI assistant with full system control, terminal UI, voice
 - **Low-latency responses** with barge-in support
 - **Natural conversation flow**
 
-### ?? Terminal & UI
-- **Beautiful TUI** built with Textual
+### Terminal & UI
+- **Floating robot** terminal animation (`jarvis`) with laptop gauges
+- **Live voice calls** from the robot (`v`) or `jarvis call` - no wake word
 - **CLI interface** with Rich formatting
 - **System tray support** (coming soon)
 - **HUD Overlay** - Iron Man style circular indicator
@@ -55,11 +56,18 @@ INSTALL_JARVIS.bat
 
 #### CLI Commands
 `ash
-# Start real-time voice mode
+# Start real-time voice mode (wake word: "Hey JARVIS")
 python jarvis_cli.py start
 
-# Launch Terminal UI
-python jarvis_cli.py tui
+# Start a live voice call: speak immediately, no wake word
+python jarvis_cli.py call
+
+# Launch the floating robot (the default command; press v to call)
+python jarvis_cli.py
+python jarvis_cli.py robot
+
+# Chat in the terminal
+python jarvis_cli.py ask "what is my battery level?"
 
 # System control
 python jarvis_cli.py open chrome
@@ -102,7 +110,7 @@ ANDROID_BRIDGE_ENABLED=true
 `
 JARVIS
 +-- Voice Layer (Wakeword + VAD + Gemini Live)
-+-- Terminal UI (Textual)
++-- Terminal UI (floating robot + live call toggle)
 +-- System Controller (Full Windows Control)
 +-- Android Bridge (ADB)
 +-- Tool Registry (Extensible)

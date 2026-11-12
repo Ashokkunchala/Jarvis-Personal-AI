@@ -23,11 +23,14 @@ In the browser, enter your generated `JARVIS_API_TOKEN` from the installed `.env
 
 ### Terminal clients
 
-There are two independent terminal clients. The default one needs **any one** of `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `GROQ_API_KEY` — it drives the same local tool-calling brain the browser uses, with no backend process, and automatically falls back through every configured provider (`JARVIS_AI_PROVIDER` controls the order, default `auto`).
+There are two independent terminal chat clients. The default one needs **any one** of `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `GROQ_API_KEY` — it drives the same local tool-calling brain the browser uses, with no backend process, and automatically falls back through every configured provider (`JARVIS_AI_PROVIDER` controls the order, default `auto`). The floating robot animation itself needs no key. Press `v` in the robot (or run `jarvis call`) to add a live Gemini voice call, which needs `GEMINI_API_KEY`.
 
 ```powershell
-# Realtime full-screen UI: streaming text, live tool log, confirmation dialogs.
-.\.venv\Scripts\python.exe jarvis_cli.py tui
+# Floating robot (the default command) with laptop CPU/RAM/battery/disk gauges.
+.\.venv\Scripts\python.exe jarvis_cli.py
+
+# Live voice call: speak immediately, no "Hey JARVIS" wake word.
+.\.venv\Scripts\python.exe jarvis_cli.py call
 
 # One-shot or interactive chat in the current pane (streams as it thinks).
 .\.venv\Scripts\python.exe jarvis_cli.py ask "what's my battery level?"
@@ -39,6 +42,8 @@ There are two independent terminal clients. The default one needs **any one** of
 # List the 137 registered tools by category.
 .\.venv\Scripts\python.exe jarvis_cli.py tools
 ```
+
+To launch the robot automatically at sign-in, run `.\scripts\install-jarvis-startup.ps1` (add `-Call` to start a live call at sign-in, or `-Remove` to delete the shortcut). The microphone stays closed in the default mode until you press `v`.
 
 `jarvis_cli.py chat` is the **backend** client: it requires `JARVIS_API_TOKEN` and a running `jarvis_cli.py serve`, and streams from the authenticated HTTP API. Use it when you want the browser's memory/reminder/coaching context in the terminal. Both clients read `JARVIS_API_URL` if set and only send a token to HTTPS endpoints or localhost.
 
@@ -61,17 +66,17 @@ There are two independent terminal clients. The default one needs **any one** of
 
 ### Personal-assistant core (`jarvis/`)
 
-- **Local Gemini tool-calling brain** (`jarvis/core/brain.py`): streams replies, dispatches to registered tools, retries with a model fallback chain, and enforces per-tool confirmation. Shared by the TUI and the WebSocket endpoint.
+- **Local Gemini tool-calling brain** (`jarvis/core/brain.py`): streams replies, dispatches to registered tools, retries with a model fallback chain, and enforces per-tool confirmation. Shared by the CLI chat and the WebSocket endpoint.
 - **Tool registry** (`jarvis/tools/`): 137 typed tools across 20 categories (system, apps, audio, window, power, screen, input, files, process, clipboard, network, shell, notify, and six `android_*` groups) with JSON schemas for Gemini function-calling and schema validation.
 - **Laptop control** (`jarvis/control/`): apps, audio, windows, power, screen capture, input, files, processes, clipboard, network, guarded shell, notifications, hardware info.
 - **Android control over ADB** (`jarvis/android_bridge/`): device state, apps, input, screen, files, SMS/calls/contacts, notifications, settings, location, wireless debugging, plus automatic ADB provisioning (`jarvis android setup`).
-- **Realtime terminal UI** (`jarvis/terminal/jarvis_tui.py`): streaming text, live tool log, status bar, confirmation dialogs, slash commands.
+- **Floating robot terminal** (`jarvis/terminal/robot.py`): a small robot that hovers, blinks and flickers its thruster, with a live clock, rotating status line and a cached CPU/RAM/battery/disk gauge. The animation is standard-library only; `psutil` is optional for the gauge. Press `v` to dial a live Gemini voice call through `jarvis/terminal/voice.py` (background thread, no wake word) or run `jarvis call`. The audio stack is imported only when a call starts. (`jarvis` with no arguments launches it; `jarvis tui` remains an alias.)
 - **Realtime HTTP/WebSocket API** (`app/ws.py`): JSON protocol carrying the same streamed events plus interactive tool confirmation.
 
 ### Backend and clients
 
 - FastAPI chat backend with Gemini, OpenRouter, and Groq text providers; choose a preferred provider or use automatic fallback. Provider keys stay on the server. Real-time audio remains on Gemini Live.
-- Live authenticated terminal chat (`python jarvis_cli.py chat`) against the HTTP backend, plus a realtime full-screen Textual UI (`python jarvis_cli.py tui`) that talks to the local brain directly. Session context is held in process memory.
+- Live authenticated terminal chat (`python jarvis_cli.py chat`) against the HTTP backend, plus a streaming local chat (`python jarvis_cli.py ask`) and a floating robot animation (`python jarvis_cli.py robot`). Session context is held in process memory.
 - Adaptive personality instructions and English/Telugu response preference.
 - Browser speech input (only when manually activated and supported) and browser text-to-speech.
 - Optional browser-local conversation history and local checklist.
@@ -121,10 +126,11 @@ Keep `HOST=127.0.0.1`. Save `.env`, then start:
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Open the responsive [JARVIS Command Center dashboard](http://127.0.0.1:8000/dashboard) for live authenticated CPU/RAM/disk/battery telemetry and charts (enter your local device token). API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
-The local assistant (TUI, `ask`, laptop/android control) works without starting the backend — only one provider key (`GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `GROQ_API_KEY`) is required:
+The local assistant (robot, `ask`, laptop/android control) works without starting the backend — only one provider key (`GEMINI_API_KEY`, `OPENROUTER_API_KEY` or `GROQ_API_KEY`) is required:
 
 ```powershell
-.\.venv\Scripts\python.exe jarvis_cli.py tui      # realtime streaming terminal UI
+.\.venv\Scripts\python.exe jarvis_cli.py           # floating robot (press v to call)
+.\.venv\Scripts\python.exe jarvis_cli.py call      # live voice call, no wake word
 .\.venv\Scripts\python.exe jarvis_cli.py ask "set volume to 30"
 .\.venv\Scripts\python.exe jarvis_cli.py laptop status
 ```

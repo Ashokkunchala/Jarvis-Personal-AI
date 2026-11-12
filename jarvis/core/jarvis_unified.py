@@ -103,11 +103,15 @@ class JarvisUnified:
 
         return {"response": "Command processed", "command": command}
 
-    async def start_realtime(self):
-        """Start real-time voice mode (blocks until cancelled)."""
+    async def start_realtime(self, *, call_mode: bool = False):
+        """Start real-time voice mode (blocks until cancelled).
+
+        ``call_mode=True`` skips the wake word and keeps the line open until
+        cancelled, like answering a phone call.
+        """
         self.running = True
-        logger.info("Starting real-time JARVIS mode...")
-        await self.agent.start()
+        logger.info("Starting real-time JARVIS mode%s...", " (call)" if call_mode else "")
+        await self.agent.start(call_mode=call_mode)
 
     async def stop(self):
         self.running = False

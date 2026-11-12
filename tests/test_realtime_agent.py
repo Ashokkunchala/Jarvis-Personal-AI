@@ -275,3 +275,27 @@ def test_tool_declarations_match_handlers():
 
     names = {tool["name"] for tool in TOOL_DECLARATIONS}
     assert names == set(_HANDLERS)
+
+
+async def test_call_mode_starts_awake_and_never_sleeps(patched):
+    agent = JarvisAgent(machine=FakeMachine())
+    await agent.initialize()
+
+    task = asyncio.create_task(agent.start(call_mode=True))
+    await _settle()
+    assert agent.call_mode is True
+    assert agent.state == AWAKE
+    assert agent.audio.input_started
+    assert agent.audio.chimes == 1  # the go-ahead chime, no wake word needed
+
+    # An idle call must stay connected even past the normal timeout.
+    agent.audio._pending = False
+    agent._last_activity = time.monotonic() - (config.awake_timeout_seconds + 1)
+    await agent._check_idle()
+    assert agent.state == AWAKE
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert agent.audio.input_stopped
+    assert agent.call_mode is False

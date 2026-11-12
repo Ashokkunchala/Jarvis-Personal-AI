@@ -208,8 +208,9 @@ Write-Host 'Next steps:'
 Write-Host '  1. Review local .env; keep all API keys and tokens private.'
 Write-Host '  2. Start JARVIS with: .\scripts\start-windows.ps1'
 Write-Host '  3. Open http://127.0.0.1:8000 and test chat/voice manually.'
-Write-Host '  4. For terminal UI: .\.venv\Scripts\python.exe jarvis_cli.py tui'
-Write-Host '  5. For Android, build/install the separate APK and test on a physical device.'
+Write-Host '  4. For the floating robot: .\.venv\Scripts\python.exe jarvis_cli.py'
+Write-Host '  5. For a live voice call: .\.venv\Scripts\python.exe jarvis_cli.py call'
+Write-Host '  6. For Android, build/install the separate APK and test on a physical device.'
 
 if ($StartAfterSetup) {
     Write-Section 'Starting JARVIS'

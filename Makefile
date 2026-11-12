@@ -1,10 +1,12 @@
-.PHONY: help install dev run test lint typecheck format migrate upgrade clean
+.PHONY: help install dev run robot call test lint typecheck format migrate upgrade clean
 
 help:
 	@echo "JARVIS Personal AI - Makefile commands"
 	@echo "  make install   - Install dependencies"
 	@echo "  make dev       - Install dev dependencies"
 	@echo "  make run       - Run enhanced server"
+	@echo "  make robot     - Launch the floating robot terminal animation"
+	@echo "  make call      - Start a live voice call (no wake word)"
 	@echo "  make test      - Run tests"
 	@echo "  make lint      - Run Ruff (gate)"
 	@echo "  make typecheck - Run mypy (informational; known baseline)"
@@ -22,6 +24,12 @@ dev:
 
 run:
 	uvicorn app.main_enhanced:app --reload --host 127.0.0.1 --port 8000
+
+robot:
+	python jarvis_cli.py robot
+
+call:
+	python jarvis_cli.py call
 
 test:
 	pytest -v

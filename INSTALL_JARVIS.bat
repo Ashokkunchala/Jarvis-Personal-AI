@@ -28,10 +28,11 @@ echo.
 echo Edit .env and set at least one AI provider key plus a random JARVIS_API_TOKEN.
 echo.
 echo To start JARVIS:
-echo   1. Terminal UI: .\.venv\Scripts\jarvis.exe tui
-echo   2. Local backend: .\.venv\Scripts\jarvis.exe serve
-echo   3. Full voice mode: .\.venv\Scripts\jarvis.exe start
-echo   4. Quick CLI: .\.venv\Scripts\jarvis.exe --help
+echo   1. Floating robot (default): .\.venv\Scripts\python.exe jarvis_cli.py
+echo   2. Live voice call: .\.venv\Scripts\python.exe jarvis_cli.py call
+echo   3. Local backend: .\.venv\Scripts\python.exe jarvis_cli.py serve
+echo   4. Wake-word voice mode: .\.venv\Scripts\python.exe jarvis_cli.py start
+echo   5. Quick CLI: .\.venv\Scripts\python.exe jarvis_cli.py --help
 echo.
 pause
 exit /b 0

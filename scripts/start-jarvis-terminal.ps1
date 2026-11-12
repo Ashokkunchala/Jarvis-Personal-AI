@@ -1,11 +1,31 @@
-$ErrorActionPreference = "Continue"
+#Requires -Version 5.1
+[CmdletBinding()]
+param(
+    [switch]$Call,
+    [switch]$NoLaptop
+)
+
+$ErrorActionPreference = "Stop"
+
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-Set-Location $root
 $pythonExe = Join-Path $root ".venv\Scripts\python.exe"
-Write-Host "JARVIS terminal assistant. Type /help for commands; /quit exits." -ForegroundColor Cyan
-& $pythonExe (Join-Path $root "jarvis_cli.py") tui
-if ($LASTEXITCODE -ne 0) {
+$cli = Join-Path $root "jarvis_cli.py"
+
+if (-not (Test-Path -LiteralPath $pythonExe)) {
+    throw "JARVIS environment missing at $pythonExe. Run INSTALL-JARVIS.ps1 first."
+}
+
+$cliArgs = @($cli, "robot")
+if ($Call) { $cliArgs += "--call" }
+if ($NoLaptop) { $cliArgs += "--no-laptop" }
+
+Write-Host "JARVIS floating robot. Press v for a voice call, space to pause, q to quit." -ForegroundColor Cyan
+& $pythonExe @cliArgs
+$code = $LASTEXITCODE
+
+if ($code -ne 0) {
     Write-Host ""
-    Write-Host "Terminal assistant exited. Check GEMINI_API_KEY in the local .env file." -ForegroundColor Yellow
+    Write-Host "JARVIS robot exited with code $code. Check .env and the voice stack." -ForegroundColor Yellow
     Read-Host "Press Enter to close"
 }
+exit $code
