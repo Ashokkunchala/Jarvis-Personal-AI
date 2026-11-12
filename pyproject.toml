@@ -37,6 +37,22 @@ dependencies = [
     "SpeechRecognition[audio]>=3.10,<4.0",
 ]
 
+[tool.setuptools]
+# Flat-layout repo (app/, jarvis/, windows_agent/ + non-package dirs): discovery must be explicit,
+# otherwise setuptools aborts with "Multiple top-level packages discovered in a flat-layout".
+py-modules = ["jarvis_cli", "jarvis_daemon", "run_enhanced"]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "jarvis*", "windows_agent*"]
+exclude = ["tests*", "scripts*", "docs*", "data*", "android*", "alembic*", "windows_agent.__pycache__*"]
+# PEP 420 namespace dirs (jarvis/config, jarvis/core/agent, ...) ship without __init__.py.
+namespaces = true
+
+[tool.setuptools.package-data]
+app = ["static/*", "static/**/*"]
+
 [project.optional-dependencies]
 windows = [
     "pywin32>=306",
@@ -56,13 +72,27 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# extend-exclude (not exclude) so Ruff's default exclusions are kept.
+# .tmp-pytest-recurrence/ and data/pytest-tmp/ hold orphaned pytest temp files
+# with a deny-all ACL: walking them emits "Access is denied (os error 5)".
+extend-exclude = [
+    ".tmp-pytest-recurrence",
+    ".pytest-tmp",
+    "data",
+    "dist",
+    "build",
+    "*.egg-info",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]
 
 [tool.mypy]
-python_version = "3.11"
+# 3.12 is the lowest target mypy can parse numpy 2.x stubs with (they use PEP 695
+# `type` statements). The runtime floor stays 3.11 (requires-python); syntax
+# compatibility with 3.11 is still enforced by CI's compileall on Python 3.11.
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

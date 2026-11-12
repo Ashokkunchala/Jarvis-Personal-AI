@@ -4,8 +4,17 @@ venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest-tmp/
+# Orphaned pytest temp dirs with a deny-all ACL (unreadable; see tool excludes)
+.tmp-pytest-recurrence/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
+# Python packaging artifacts (python -m build / pip install -e)
+build/
+dist/
+*.egg-info/
 data/
 *.sqlite
 *.sqlite3

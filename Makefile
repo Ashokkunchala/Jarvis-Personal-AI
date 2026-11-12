@@ -34,7 +34,7 @@ format:
 	ruff format app/ tests/
 
 migrate:
-	alembic revision --autogenerate -m "Send a message to a user.  MSG {username | sessionname | sessionid | @filename | *}     [/SERVER:servername] [/TIME:seconds] [/V] [/W] [message]    username            Identifies the specified username.   sessionname         The name of the session.   sessionid           The ID of the session.   @filename           Identifies a file containing a list of usernames,                       sessionnames, and sessionids to send the message to.   *                   Send message to all sessions on specified server.   /SERVER:servername  server to contact (default is current).   /TIME:seconds       Time delay to wait for receiver to acknowledge msg.   /V                  Display information about actions being performed.   /W                  Wait for response from user, useful with /V.   message             Message to send.  If none specified, prompts for it                       or reads from stdin. "
+	alembic revision --autogenerate -m "Initial schema"
 
 upgrade:
 	alembic upgrade head
@@ -48,8 +48,6 @@ docker-up:
 docker-down:
 	docker-compose down
 
+# Cross-platform (the previous `find`-based recipe failed on Windows hosts).
 clean:
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
-	find . -type f -name "*.pyo" -delete
-	rm -rf .pytest_cache .mypy_cache .ruff_cache
+	python -c "import pathlib, shutil; roots=[p for p in pathlib.Path('.').iterdir() if p.is_dir() and p.name not in {'.venv','venv','.git','node_modules'}]; [shutil.rmtree(d, ignore_errors=True) for r in roots for d in r.rglob('__pycache__')]; [f.unlink() for r in roots for f in r.rglob('*.pyc')]; [shutil.rmtree(c, ignore_errors=True) for c in map(pathlib.Path, ('.pytest_cache','.mypy_cache','.ruff_cache'))]"
