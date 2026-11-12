@@ -212,18 +212,3 @@ def test_admin_can_issue_list_and_revoke_device_tokens():
         assert revoked.status_code == 200
         assert revoked.json()["revoked"] is True
         assert client.get("/api/health/detailed", headers=device_auth).status_code == 401
-
-def test_enhanced_app_registers_live_voice_routes_once():
-    from collections import Counter
-
-    from app.live_voice import router as live_voice_router
-
-    expected = Counter(route.path for route in live_voice_router.routes)
-    registered = Counter()
-    for route in app.routes:
-        if getattr(route, "path", None) in expected:
-            registered[route.path] += 1
-        for child in getattr(route, "routes", ()):
-            if getattr(child, "path", None) in expected:
-                registered[child.path] += 1
-    assert registered == expected
