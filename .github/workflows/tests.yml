@@ -2,9 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [main, "improve/**", "jarvis-cinematic-local-voice"]
+    branches: [main, "improve/**", "feature/**", "chore/**", "jarvis-cinematic-local-voice"]
   pull_request:
-    branches: [main]
+    branches: [main, "jarvis-cinematic-local-voice"]
 
 permissions:
   contents: read
