@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -26,8 +27,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -37,11 +43,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.ashok.jarvis.ui.JarvisOrb
+import com.ashok.jarvis.ui.OrbState
+import com.ashok.jarvis.ui.theme.JarvisTheme
+import com.ashok.jarvis.ui.theme.TextMuted
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -70,19 +83,57 @@ private fun parseReminderItems(payload: String): List<ReminderItem> {
     }
 }
 
+// One visible exchange in the chat card; also sent to the backend as short history.
+private data class ChatTurn(val role: String, val content: String)
+
+private val PERSONALITY_MODES = listOf(
+    "assistant" to "Assistant",
+    "friend" to "Friend",
+    "teacher" to "Teacher",
+    "storyteller" to "Storyteller",
+    "doctor" to "Doctor",
+)
+
+private val QUICK_ACTIONS = listOf(
+    "What is my system status?",
+    "Tell me a short story",
+    "Sing me a song",
+    "Teach me something about AWS",
+    "What reminders do I have today?",
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) { SetupScreen() }
+            JarvisTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) { CommandCentreScreen() }
             }
         }
     }
 }
 
 @Composable
-private fun SetupScreen() {
+private fun SectionCard(title: String, content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun CommandCentreScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -118,6 +169,15 @@ private fun SetupScreen() {
                 .getBoolean("notifications_enabled", false)
         )
     }
+    var personalityMode by remember {
+        mutableStateOf(
+            context.getSharedPreferences("jarvis_reminder_settings", android.content.Context.MODE_PRIVATE)
+                .getString("personality_mode", "assistant") ?: "assistant"
+        )
+    }
+    var conversation by remember { mutableStateOf(listOf<ChatTurn>()) }
+    var runtimeEvents by remember { mutableStateOf(listOf<String>()) }
+    var runtimeCursor by remember { mutableStateOf(0) }
     var liveVoiceActive by remember { mutableStateOf(false) }
     var liveVoiceStatus by remember { mutableStateOf("Live Voice is off. Start it explicitly when ready.") }
     val liveVoiceController = remember(context) {
@@ -221,461 +281,679 @@ private fun SetupScreen() {
         }
     }
 
+    // One poll of the bounded backend activity feed; never throws.
+    suspend fun refreshActivity() {
+        try {
+            val base = TokenVault.readBackendUrl(context) ?: endpoint.trim().trimEnd('/')
+            val activeToken = TokenVault.read(context) ?: token
+            if (base.isBlank() || activeToken.length < 32) return
+            val result = withContext(Dispatchers.IO) {
+                request("$base/api/runtime/events?after_id=$runtimeCursor&limit=20", null, activeToken)
+            }
+            if (result.first != 200) return
+            val parsed = JSONObject(result.second)
+            val events = parsed.optJSONArray("events") ?: return
+            val lines = mutableListOf<Pair<Int, String>>()
+            for (i in 0 until events.length()) {
+                val event = events.optJSONObject(i) ?: continue
+                val id = event.optInt("id", 0)
+                val category = event.optString("category", "event")
+                val detail = event.optString("tool",
+                    event.optString("provider", event.optString("action", event.optString("task_id", ""))))
+                val risk = event.optString("risk", "")
+                val outcome = if (event.has("success")) {
+                    if (event.optBoolean("success")) "ok" else "failed"
+                } else ""
+                val timestamp = event.optString("timestamp", "").take(19).replace("T", " ")
+                val label = buildString {
+                    append(category)
+                    if (detail.isNotBlank()) append(" · ").append(detail)
+                    if (risk.isNotBlank()) append(" · risk: ").append(risk)
+                    if (outcome.isNotBlank()) append(" · ").append(outcome)
+                }
+                if (id > 0) lines.add(id to "$timestamp  $label")
+            }
+            if (lines.isNotEmpty()) {
+                runtimeCursor = lines.maxOf { it.first }
+                runtimeEvents = (lines.map { it.second } + runtimeEvents).take(8)
+            }
+        } catch (_: Exception) {
+            // The feed is best-effort; chat continues when the backend is unreachable.
+        }
+    }
+
+    // Poll the backend activity feed while this screen is alive.
+    LaunchedEffect(Unit) {
+        while (true) {
+            refreshActivity()
+            delay(20_000)
+        }
+    }
+
+    val connected = endpoint.isNotBlank() && token.length >= 32
+    val orbState = when {
+        !connected -> OrbState.OFFLINE
+        voiceBusy || liveVoiceActive -> OrbState.LISTENING
+        busy -> OrbState.BUSY
+        else -> OrbState.IDLE
+    }
+
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("JARVIS Personal AI", style = MaterialTheme.typography.headlineMedium)
-        Text("Native Android prototype • Voice is user-initiated; no always-on microphone.")
-        OutlinedTextField(
-            value = endpoint,
-            onValueChange = { endpoint = it.trimEnd('/') },
-            label = { Text("HTTPS backend URL") },
+        // Command-centre header: AI core orb + status bar.
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        OutlinedTextField(
-            value = token,
-            onValueChange = { token = it },
-            label = { Text("Device token") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Button(
-            enabled = !busy,
-            onClick = {
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            JarvisOrb(state = orbState, modifier = Modifier.size(96.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "JARVIS",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    when (orbState) {
+                        OrbState.OFFLINE -> "CORE OFFLINE - connect to your backend"
+                        OrbState.LISTENING -> "LISTENING"
+                        OrbState.BUSY -> "WORKING"
+                        OrbState.SPEAKING -> "SPEAKING"
+                        OrbState.IDLE -> "CORE ONLINE - systems ready"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "Voice is user-initiated; no always-on microphone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted,
+                )
+            }
+        }
+
+        SectionCard(title = "CONNECTION") {
+            OutlinedTextField(
+                value = endpoint,
+                onValueChange = { endpoint = it.trimEnd('/') },
+                label = { Text("HTTPS backend URL") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text("Device token") },
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Button(
+                enabled = !busy,
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        status = "Checking HTTPS backend…"
+                        try {
+                            val base = endpoint.trim().trimEnd('/')
+                            require(base.startsWith("https://") && URL(base).host.isNotBlank()) { "Enter a valid HTTPS backend URL." }
+                            require(token.length >= 32 && !token.startsWith("replace_")) { "Enter the real device token (at least 32 characters)." }
+                            val code = withContext(Dispatchers.IO) { request(base + "/health", null, null) }
+                            require(code.first == 200) { "Backend health check returned HTTP ${code.first}." }
+                            val previousToken = TokenVault.read(context)
+                            TokenVault.store(context, token)
+                            TokenVault.storeBackendUrl(context, base)
+                            if (previousToken != token) {
+                                TokenVault.clearDeviceId(context)
+                                pairedDeviceId = ""
+                            }
+                            status = "Connected to backend. Token encrypted on this device."
+                        } catch (error: Exception) {
+                            status = error.message ?: "Connection failed."
+                        } finally { busy = false }
+                    }
+                }
+            ) { Text(if (busy) "Connecting…" else "Connect securely") }
+
+            Text("Pair this Android device", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Use the backend master token once to issue a device token. The master token is never stored by this app.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+            OutlinedTextField(
+                value = deviceName,
+                onValueChange = { deviceName = it },
+                label = { Text("Device name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = masterToken,
+                onValueChange = { masterToken = it },
+                label = { Text("Backend master token (pairing only)") },
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Button(enabled = !busy && pairedDeviceId.isBlank(), onClick = {
                 scope.launch {
                     busy = true
-                    status = "Checking HTTPS backend…"
+                    status = "Pairing this device securely…"
                     try {
                         val base = endpoint.trim().trimEnd('/')
+                        val bootstrapToken = masterToken.trim()
                         require(base.startsWith("https://") && URL(base).host.isNotBlank()) { "Enter a valid HTTPS backend URL." }
-                        require(token.length >= 32 && !token.startsWith("replace_")) { "Enter the real device token (at least 32 characters)." }
-                        val code = withContext(Dispatchers.IO) { request(base + "/health", null, null) }
-                        require(code.first == 200) { "Backend health check returned HTTP ${code.first}." }
-                        val previousToken = TokenVault.read(context)
-                        TokenVault.store(context, token)
+                        require(bootstrapToken.length >= 32 && !bootstrapToken.startsWith("replace_")) { "Enter the configured master API token." }
+                        require(deviceName.isNotBlank()) { "Enter a name for this device." }
+                        val payload = JSONObject().put("name", deviceName.trim()).toString()
+                        val result = withContext(Dispatchers.IO) {
+                            request(base + "/api/devices/issue", payload, bootstrapToken)
+                        }
+                        val parsed = JSONObject(result.second)
+                        require(result.first in 200..299) {
+                            parsed.optString("detail", "Device pairing failed with HTTP ${result.first}.")
+                        }
+                        val issuedToken = parsed.optString("token")
+                        val issuedDeviceId = parsed.optString("device_id")
+                        require(issuedToken.length >= 32 && issuedDeviceId.isNotBlank()) { "Backend returned incomplete pairing details." }
+                        TokenVault.store(context, issuedToken)
                         TokenVault.storeBackendUrl(context, base)
-                        if (previousToken != token) {
-                            TokenVault.clearDeviceId(context)
-                            pairedDeviceId = ""
-                        }
-                        status = "Connected to backend. Token encrypted on this device."
+                        TokenVault.storeDeviceId(context, issuedDeviceId)
+                        token = issuedToken
+                        endpoint = base
+                        pairedDeviceId = issuedDeviceId
+                        status = "Paired as ${parsed.optString("name", deviceName)}. Device token encrypted on this phone."
                     } catch (error: Exception) {
-                        status = error.message ?: "Connection failed."
-                    } finally { busy = false }
-                }
-            }
-        ) { Text(if (busy) "Connecting…" else "Connect securely") }
-
-        Text("Pair this Android device", style = MaterialTheme.typography.titleLarge)
-        Text("Use the backend master token once to issue a device token. The master token is never stored by this app.")
-        OutlinedTextField(
-            value = deviceName,
-            onValueChange = { deviceName = it },
-            label = { Text("Device name") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        OutlinedTextField(
-            value = masterToken,
-            onValueChange = { masterToken = it },
-            label = { Text("Backend master token (pairing only)") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Button(enabled = !busy && pairedDeviceId.isBlank(), onClick = {
-            scope.launch {
-                busy = true
-                status = "Pairing this device securely…"
-                try {
-                    val base = endpoint.trim().trimEnd('/')
-                    val bootstrapToken = masterToken.trim()
-                    require(base.startsWith("https://") && URL(base).host.isNotBlank()) { "Enter a valid HTTPS backend URL." }
-                    require(bootstrapToken.length >= 32 && !bootstrapToken.startsWith("replace_")) { "Enter the configured master API token." }
-                    require(deviceName.isNotBlank()) { "Enter a name for this device." }
-                    val payload = JSONObject().put("name", deviceName.trim()).toString()
-                    val result = withContext(Dispatchers.IO) {
-                        request(base + "/api/devices/issue", payload, bootstrapToken)
+                        status = error.message ?: "Device pairing failed."
+                    } finally {
+                        masterToken = ""
+                        busy = false
                     }
-                    val parsed = JSONObject(result.second)
-                    require(result.first in 200..299) {
-                        parsed.optString("detail", "Device pairing failed with HTTP ${result.first}.")
-                    }
-                    val issuedToken = parsed.optString("token")
-                    val issuedDeviceId = parsed.optString("device_id")
-                    require(issuedToken.length >= 32 && issuedDeviceId.isNotBlank()) { "Backend returned incomplete pairing details." }
-                    TokenVault.store(context, issuedToken)
-                    TokenVault.storeBackendUrl(context, base)
-                    TokenVault.storeDeviceId(context, issuedDeviceId)
-                    token = issuedToken
-                    endpoint = base
-                    pairedDeviceId = issuedDeviceId
-                    status = "Paired as ${parsed.optString("name", deviceName)}. Device token encrypted on this phone."
-                } catch (error: Exception) {
-                    status = error.message ?: "Device pairing failed."
-                } finally {
-                    masterToken = ""
-                    busy = false
                 }
-            }
-        }) { Text(if (pairedDeviceId.isNotBlank()) "Revoke existing pairing first" else if (busy) "Pairing…" else "Pair device") }
+            }) { Text(if (pairedDeviceId.isNotBlank()) "Revoke existing pairing first" else if (busy) "Pairing…" else "Pair device") }
 
-        if (pairedDeviceId.isNotBlank()) {
-            Button(enabled = !busy, onClick = { showRevokeConfirmation = true }) { Text("Revoke paired device") }
-        }
-        if (showRevokeConfirmation) {
-            AlertDialog(
-                onDismissRequest = { showRevokeConfirmation = false },
-                title = { Text("Revoke this device token?") },
-                text = { Text("Enter the master token in the pairing field above before confirming. This immediately disables this phone's paired token and clears it from this phone.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        showRevokeConfirmation = false
-                        scope.launch {
-                            busy = true
-                            try {
-                                val base = TokenVault.readBackendUrl(context) ?: endpoint.trim().trimEnd('/')
-                                val bootstrapToken = masterToken.trim()
-                                require(base.startsWith("https://") && URL(base).host.isNotBlank()) { "Reconnect to the HTTPS backend first." }
-                                require(bootstrapToken.length >= 32 && !bootstrapToken.startsWith("replace_")) { "Enter the configured master API token before revoking." }
-                                val deviceId = TokenVault.readDeviceId(context) ?: pairedDeviceId
-                                require(deviceId.isNotBlank()) { "No paired device ID is stored on this phone." }
-                                val result = withContext(Dispatchers.IO) {
-                                    request("$base/api/devices/$deviceId", null, bootstrapToken, "DELETE")
+            if (pairedDeviceId.isNotBlank()) {
+                Button(enabled = !busy, onClick = { showRevokeConfirmation = true }) { Text("Revoke paired device") }
+            }
+            if (showRevokeConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showRevokeConfirmation = false },
+                    title = { Text("Revoke this device token?") },
+                    text = { Text("Enter the master token in the pairing field above before confirming. This immediately disables this phone's paired token and clears it from this phone.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showRevokeConfirmation = false
+                            scope.launch {
+                                busy = true
+                                try {
+                                    val base = TokenVault.readBackendUrl(context) ?: endpoint.trim().trimEnd('/')
+                                    val bootstrapToken = masterToken.trim()
+                                    require(base.startsWith("https://") && URL(base).host.isNotBlank()) { "Reconnect to the HTTPS backend first." }
+                                    require(bootstrapToken.length >= 32 && !bootstrapToken.startsWith("replace_")) { "Enter the configured master API token before revoking." }
+                                    val deviceId = TokenVault.readDeviceId(context) ?: pairedDeviceId
+                                    require(deviceId.isNotBlank()) { "No paired device ID is stored on this phone." }
+                                    val result = withContext(Dispatchers.IO) {
+                                        request("$base/api/devices/$deviceId", null, bootstrapToken, "DELETE")
+                                    }
+                                    val parsed = JSONObject(result.second)
+                                    require(result.first in 200..299) {
+                                        parsed.optString("detail", "Device revocation failed with HTTP ${result.first}.")
+                                    }
+                                    TokenVault.clear(context)
+                                    ReminderWorker.setEnabled(context, false)
+                                    reminderNotificationsEnabled = false
+                                    liveVoiceController.stop()
+                                    liveVoiceActive = false
+                                    token = ""
+                                    endpoint = ""
+                                    pairedDeviceId = ""
+                                    status = "Device token revoked on the backend and cleared from this phone."
+                                } catch (error: Exception) {
+                                    status = error.message ?: "Device revocation failed."
+                                } finally {
+                                    masterToken = ""
+                                    busy = false
                                 }
-                                val parsed = JSONObject(result.second)
-                                require(result.first in 200..299) {
-                                    parsed.optString("detail", "Device revocation failed with HTTP ${result.first}.")
-                                }
-                                TokenVault.clear(context)
-                                ReminderWorker.setEnabled(context, false)
-                                reminderNotificationsEnabled = false
-                                liveVoiceController.stop()
-                                liveVoiceActive = false
-                                token = ""
-                                endpoint = ""
-                                pairedDeviceId = ""
-                                status = "Device token revoked on the backend and cleared from this phone."
-                            } catch (error: Exception) {
-                                status = error.message ?: "Device revocation failed."
-                            } finally {
-                                masterToken = ""
-                                busy = false
                             }
-                        }
-                    }) { Text("Revoke device") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showRevokeConfirmation = false }) { Text("Cancel") }
-                }
-            )
+                        }) { Text("Revoke device") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showRevokeConfirmation = false }) { Text("Cancel") }
+                    }
+                )
+            }
+            Button(onClick = { language = when (language) { "auto" -> "en"; "en" -> "te"; else -> "auto" } }) { Text("Reply language: $language (tap to change)") }
         }
 
-        Button(onClick = { language = when (language) { "auto" -> "en"; "en" -> "te"; else -> "auto" } }) { Text("Reply language: $language (tap to change)") }
-        Text("Phone quick controls", style = MaterialTheme.typography.titleLarge)
-        Text("These open Android's own settings screens. JARVIS does not silently toggle protected settings.")
-        Button(onClick = { openSystemSettings(context, Settings.ACTION_SETTINGS, status = { status = it }) }) { Text("Open device settings") }
-        Button(onClick = { openSystemSettings(context, Settings.ACTION_WIFI_SETTINGS, status = { status = it }) }) { Text("Open Wi-Fi settings") }
-        Button(onClick = { openSystemSettings(context, Settings.ACTION_BLUETOOTH_SETTINGS, status = { status = it }) }) { Text("Open Bluetooth settings") }
-        Button(onClick = {
-            openSystemSettings(context, Settings.ACTION_APPLICATION_DETAILS_SETTINGS, status = { status = it },
-                uri = Uri.parse("package:" + context.packageName))
-        }) { Text("Open JARVIS app permissions") }
-
-        Text("Reminders & routines", style = MaterialTheme.typography.titleLarge)
-        Text("Use an ISO-8601 date/time with timezone, for example 2026-10-27T08:00:00+05:30.")
-        OutlinedTextField(
-            value = reminderTitle,
-            onValueChange = { reminderTitle = it },
-            label = { Text("Reminder title") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        OutlinedTextField(
-            value = reminderDueAt,
-            onValueChange = { reminderDueAt = it },
-            label = { Text("Due date/time with timezone") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Button(onClick = {
-            reminderRecurrence = when (reminderRecurrence) {
-                "none" -> "daily"
-                "daily" -> "weekly"
-                "weekly" -> "monthly"
-                else -> "none"
-            }
-        }) { Text("Repeat: $reminderRecurrence (tap to change)") }
-        Button(enabled = !busy && reminderTitle.isNotBlank() && reminderDueAt.isNotBlank(), onClick = {
-            scope.launch {
-                busy = true
-                try {
-                    val base = endpoint.trim().trimEnd('/')
-                    val activeToken = TokenVault.read(context) ?: token
-                    require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before creating reminders." }
-                    val payload = JSONObject().put("title", reminderTitle.trim())
-                        .put("due_at", reminderDueAt.trim()).put("recurrence", reminderRecurrence).toString()
-                    val result = withContext(Dispatchers.IO) { request(base + "/api/reminders", payload, activeToken) }
-                    val parsed = JSONObject(result.second)
-                    if (result.first !in 200..299) throw IllegalStateException(parsed.optString("detail", "Reminder creation failed (${result.first})."))
-                    reminderTitle = ""
-                    status = "Reminder saved to your authenticated JARVIS backend."
-                } catch (error: Exception) {
-                    status = error.message ?: "Could not create reminder."
-                } finally { busy = false }
-            }
-        }) { Text("Create reminder") }
-        Button(enabled = !busy, onClick = {
-            scope.launch {
-                busy = true
-                try {
-                    val base = endpoint.trim().trimEnd('/')
-                    val activeToken = TokenVault.read(context) ?: token
-                    require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before loading reminders." }
-                    val result = withContext(Dispatchers.IO) { request(base + "/api/reminders", null, activeToken) }
-                    val parsed = JSONObject(result.second)
-                    if (result.first !in 200..299) throw IllegalStateException(parsed.optString("detail", "Could not load reminders (${result.first})."))
-                    reminders = parseReminderItems(result.second)
-                    status = "Loaded ${reminders.size} reminder(s)."
-                } catch (error: Exception) {
-                    status = error.message ?: "Could not load reminders."
-                } finally { busy = false }
-            }
-        }) { Text("Refresh reminders") }
-        reminders.forEach { reminder ->
+        SectionCard(title = "TALK TO JARVIS") {
+            Text(
+                when (personalityMode) {
+                    "doctor" -> "Doctor mode gives general health information only - it is not a doctor and not medical advice."
+                    "storyteller" -> "Storyteller mode tells original stories on request."
+                    else -> "Choose how JARVIS talks to you."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                val repeatLabel = if (reminder.recurrence == "none") "" else " · ${reminder.recurrence}"
+                PERSONALITY_MODES.forEach { (modeKey, label) ->
+                    FilterChip(
+                        selected = personalityMode == modeKey,
+                        onClick = {
+                            personalityMode = modeKey
+                            context.getSharedPreferences("jarvis_reminder_settings", android.content.Context.MODE_PRIVATE)
+                                .edit().putString("personality_mode", modeKey).apply()
+                        },
+                        label = { Text(label) },
+                    )
+                }
+            }
+            if (conversation.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    conversation.takeLast(6).forEach { turn ->
+                        Text(
+                            (if (turn.role == "user") "YOU  " else "JARVIS  ") + turn.content,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (turn.role == "user") MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            } else {
+                Text(reply, style = MaterialTheme.typography.bodyMedium)
+            }
+            OutlinedTextField(
+                value = message,
+                onValueChange = { message = it },
+                label = { Text("Message JARVIS") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                QUICK_ACTIONS.forEach { prompt ->
+                    AssistChip(
+                        onClick = {
+                            message = prompt
+                            status = "Quick action ready. Tap Send."
+                        },
+                        label = { Text(prompt) },
+                    )
+                }
+            }
+            Button(
+                enabled = !busy && !voiceBusy,
+                onClick = {
+                    if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        launchSpeech(speechLauncher, language) { voiceBusy = it }
+                    } else {
+                        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                }
+            ) { Text(if (voiceBusy) "Listening…" else "Speak to JARVIS") }
+            Button(
+                enabled = !busy && phoneSettingsAction != null,
+                onClick = {
+                    val action = phoneSettingsAction
+                    if (action != null) {
+                        val uri = if (action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) Uri.parse("package:" + context.packageName) else null
+                        openSystemSettings(context, action, status = { status = it }, uri = uri)
+                    }
+                }
+            ) { Text("Run recognized phone command") }
+            Text(
+                "Supported voice commands: open device settings, open Wi-Fi settings, open Bluetooth settings, open JARVIS app permissions.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+            Button(
+                enabled = !busy && message.isNotBlank(),
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        try {
+                            val base = endpoint.trim().trimEnd('/')
+                            require(base.startsWith("https://")) { "Connect to an HTTPS backend first." }
+                            val activeToken = TokenVault.read(context) ?: token
+                            require(activeToken.length >= 32) { "Connect with a device token first." }
+                            val sent = message.trim()
+                            val history = JSONArray()
+                            conversation.takeLast(10).forEach { turn ->
+                                history.put(JSONObject().put("role", turn.role).put("content", turn.content))
+                            }
+                            val payload = JSONObject().put("message", sent)
+                                .put("language", language)
+                                .put("mode", personalityMode)
+                                .put("history", history)
+                                .toString()
+                            val result = withContext(Dispatchers.IO) {
+                                request(base + "/api/chat", payload, activeToken)
+                            }
+                            val parsed = JSONObject(result.second)
+                            if (result.first !in 200..299) {
+                                throw IllegalStateException(parsed.optString("detail", "Chat failed with HTTP ${result.first}."))
+                            }
+                            reply = parsed.optString("reply", "JARVIS returned no text.")
+                            conversation = (conversation + ChatTurn("user", sent) + ChatTurn("model", reply)).takeLast(20)
+                            message = ""
+                            status = "Message sent securely over HTTPS."
+                        } catch (error: Exception) {
+                            status = error.message ?: "Chat request failed."
+                        } finally { busy = false }
+                    }
+                }
+            ) { Text(if (busy) "Working…" else "Send") }
+        }
+
+        SectionCard(title = "ACTIVITY & APPROVALS") {
+            Text(
+                "Live feed from your JARVIS backend. JARVIS still asks before anything sensitive or irreversible - confirmations stay on your laptop; this feed shows you what it is doing.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+            if (runtimeEvents.isEmpty()) {
                 Text(
-                    "${reminder.title} — ${reminder.dueAt}$repeatLabel",
-                    modifier = Modifier.weight(1f),
+                    "No backend activity yet. Events appear here while the app is open.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Button(enabled = !busy && !reminder.completed, onClick = {
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    runtimeEvents.forEach { eventLine ->
+                        Text(eventLine, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+            TextButton(enabled = !busy, onClick = { scope.launch { refreshActivity() } }) { Text("Refresh activity now") }
+        }
+
+        SectionCard(title = "LIVE VOICE") {
+            Text(
+                "Starts only after you tap and grant microphone permission. Audio is sent to your configured Gemini Live backend.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(enabled = !busy && !liveVoiceActive, onClick = {
+                    if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        startLiveVoice()
+                    } else {
+                        liveVoicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                }) { Text("Start Live Voice") }
+                Button(enabled = liveVoiceActive, onClick = { liveVoiceController.interrupt() }) { Text("Interrupt") }
+                Button(enabled = liveVoiceActive, onClick = { liveVoiceController.stop() }) { Text("Stop") }
+            }
+            Text(liveVoiceStatus, style = MaterialTheme.typography.bodyMedium)
+        }
+
+        SectionCard(title = "PHONE CONTROLS") {
+            Text(
+                "These open Android's own settings screens. JARVIS does not silently toggle protected settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(onClick = { openSystemSettings(context, Settings.ACTION_SETTINGS, status = { status = it }) }) { Text("Device settings") }
+                Button(onClick = { openSystemSettings(context, Settings.ACTION_WIFI_SETTINGS, status = { status = it }) }) { Text("Wi-Fi") }
+                Button(onClick = { openSystemSettings(context, Settings.ACTION_BLUETOOTH_SETTINGS, status = { status = it }) }) { Text("Bluetooth") }
+                Button(onClick = {
+                    openSystemSettings(context, Settings.ACTION_APPLICATION_DETAILS_SETTINGS, status = { status = it },
+                        uri = Uri.parse("package:" + context.packageName))
+                }) { Text("App permissions") }
+            }
+        }
+
+        SectionCard(title = "REMINDERS & ROUTINES") {
+            Text(
+                "Use an ISO-8601 date/time with timezone, for example 2026-10-27T08:00:00+05:30.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+            OutlinedTextField(
+                value = reminderTitle,
+                onValueChange = { reminderTitle = it },
+                label = { Text("Reminder title") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = reminderDueAt,
+                onValueChange = { reminderDueAt = it },
+                label = { Text("Due date/time with timezone") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    reminderRecurrence = when (reminderRecurrence) {
+                        "none" -> "daily"
+                        "daily" -> "weekly"
+                        "weekly" -> "monthly"
+                        else -> "none"
+                    }
+                }) { Text("Repeat: $reminderRecurrence") }
+                Button(enabled = !busy && reminderTitle.isNotBlank() && reminderDueAt.isNotBlank(), onClick = {
                     scope.launch {
                         busy = true
                         try {
                             val base = endpoint.trim().trimEnd('/')
                             val activeToken = TokenVault.read(context) ?: token
-                            require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before completing reminders." }
-                            val completion = withContext(Dispatchers.IO) {
-                                request(base + "/api/reminders/${reminder.id}/complete", "{}", activeToken, "POST")
-                            }
-                            val completed = JSONObject(completion.second)
-                            if (completion.first !in 200..299) {
-                                throw IllegalStateException(completed.optString("detail", "Reminder completion failed (${completion.first})."))
-                            }
-                            val refreshed = withContext(Dispatchers.IO) {
-                                request(base + "/api/reminders", null, activeToken)
-                            }
-                            if (refreshed.first !in 200..299) throw IllegalStateException("Reminder was completed but the list refresh failed.")
-                            reminders = parseReminderItems(refreshed.second)
-                            status = if (completed.optBoolean("completed", true)) {
-                                "Reminder completed."
-                            } else {
-                                "Reminder completed; next occurrence scheduled."
-                            }
+                            require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before creating reminders." }
+                            val payload = JSONObject().put("title", reminderTitle.trim())
+                                .put("due_at", reminderDueAt.trim()).put("recurrence", reminderRecurrence).toString()
+                            val result = withContext(Dispatchers.IO) { request(base + "/api/reminders", payload, activeToken) }
+                            val parsed = JSONObject(result.second)
+                            if (result.first !in 200..299) throw IllegalStateException(parsed.optString("detail", "Reminder creation failed (${result.first})."))
+                            reminderTitle = ""
+                            status = "Reminder saved to your authenticated JARVIS backend."
                         } catch (error: Exception) {
-                            status = error.message ?: "Could not complete reminder."
+                            status = error.message ?: "Could not create reminder."
                         } finally { busy = false }
                     }
-                }) { Text(if (reminder.completed) "Done" else "Complete") }
-            }
-        }
-        Text("Android notifications", style = MaterialTheme.typography.titleMedium)
-        Text("When enabled, JARVIS checks the backend about every 15 minutes while network access is available. Delivery may be delayed; this is not an alarm service.")
-        Button(onClick = {
-            if (reminderNotificationsEnabled) {
-                ReminderWorker.setEnabled(context, false)
-                reminderNotificationsEnabled = false
-                status = "Android reminder notifications disabled."
-            } else {
-                val savedEndpoint = TokenVault.readBackendUrl(context)
-                val savedToken = TokenVault.read(context)
-                if (savedEndpoint.isNullOrBlank() || savedToken.isNullOrBlank()) {
-                    status = "Connect securely before enabling reminder notifications."
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                    ReminderWorker.setEnabled(context, true)
-                    reminderNotificationsEnabled = true
-                    status = "Android reminder notifications enabled. Delivery is best-effort and may be delayed."
-                }
-            }
-        }) { Text(if (reminderNotificationsEnabled) "Disable Android notifications" else "Enable Android notifications") }
-
-        Text("Explicit memories", style = MaterialTheme.typography.titleLarge)
-        Text("Save only facts or preferences you choose to keep. Review or delete them here.")
-        OutlinedTextField(
-            value = memoryText,
-            onValueChange = { memoryText = it },
-            label = { Text("Memory to save") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Button(enabled = !busy && memoryText.isNotBlank(), onClick = {
-            scope.launch {
-                busy = true
-                try {
-                    val base = endpoint.trim().trimEnd('/')
-                    val activeToken = TokenVault.read(context) ?: token
-                    require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before saving memories." }
-                    val payload = JSONObject().put("text", memoryText.trim()).put("category", "general").toString()
-                    val result = withContext(Dispatchers.IO) {
-                        request(base + "/api/memories", payload, activeToken)
-                    }
-                    val parsed = JSONObject(result.second)
-                    if (result.first !in 200..299) throw IllegalStateException(parsed.optString("detail", "Memory save failed (${result.first})."))
-                    memoryText = ""
-                    status = "Memory saved. Refresh to review it."
-                } catch (error: Exception) {
-                    status = error.message ?: "Could not save memory."
-                } finally { busy = false }
-            }
-        }) { Text("Save memory") }
-        Button(enabled = !busy, onClick = {
-            scope.launch {
-                busy = true
-                try {
-                    val base = endpoint.trim().trimEnd('/')
-                    val activeToken = TokenVault.read(context) ?: token
-                    require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before loading memories." }
-                    val result = withContext(Dispatchers.IO) {
-                        request(base + "/api/memories", null, activeToken)
-                    }
-                    val parsed = JSONObject(result.second)
-                    if (result.first !in 200..299) throw IllegalStateException(parsed.optString("detail", "Memory list failed (${result.first})."))
-                    val items = parsed.optJSONArray("items")
-                    memories = (0 until (items?.length() ?: 0)).mapNotNull { i ->
-                        items?.optJSONObject(i)?.let { item ->
-                            item.optInt("id") to (item.optString("category") + ": " + item.optString("text"))
-                        }
-                    }
-                    status = "Loaded ${memories.size} saved memory(s)."
-                } catch (error: Exception) {
-                    status = error.message ?: "Could not load memories."
-                } finally { busy = false }
-            }
-        }) { Text("Review memories") }
-        memories.forEach { (id, text) ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(text, style = MaterialTheme.typography.bodyMedium)
+                }) { Text("Create") }
                 Button(enabled = !busy, onClick = {
                     scope.launch {
                         busy = true
                         try {
                             val base = endpoint.trim().trimEnd('/')
                             val activeToken = TokenVault.read(context) ?: token
-                            require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before deleting memories." }
-                            val result = withContext(Dispatchers.IO) {
-                                request(base + "/api/memories/$id", null, activeToken, "DELETE")
-                            }
-                            if (result.first !in 200..299) throw IllegalStateException("Memory deletion failed (${result.first}).")
-                            memories = memories.filterNot { it.first == id }
-                            status = "Memory deleted."
+                            require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before loading reminders." }
+                            val result = withContext(Dispatchers.IO) { request(base + "/api/reminders", null, activeToken) }
+                            val parsed = JSONObject(result.second)
+                            if (result.first !in 200..299) throw IllegalStateException(parsed.optString("detail", "Could not load reminders (${result.first})."))
+                            reminders = parseReminderItems(result.second)
+                            status = "Loaded ${reminders.size} reminder(s)."
                         } catch (error: Exception) {
-                            status = error.message ?: "Could not delete memory."
+                            status = error.message ?: "Could not load reminders."
                         } finally { busy = false }
                     }
-                }) { Text("Delete") }
+                }) { Text("Refresh") }
+            }
+            reminders.forEach { reminder ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val repeatLabel = if (reminder.recurrence == "none") "" else " · ${reminder.recurrence}"
+                    Text(
+                        "${reminder.title} — ${reminder.dueAt}$repeatLabel",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(enabled = !busy && !reminder.completed, onClick = {
+                        scope.launch {
+                            busy = true
+                            try {
+                                val base = endpoint.trim().trimEnd('/')
+                                val activeToken = TokenVault.read(context) ?: token
+                                require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before completing reminders." }
+                                val completion = withContext(Dispatchers.IO) {
+                                    request(base + "/api/reminders/${reminder.id}/complete", "{}", activeToken, "POST")
+                                }
+                                val completed = JSONObject(completion.second)
+                                if (completion.first !in 200..299) {
+                                    throw IllegalStateException(completed.optString("detail", "Reminder completion failed (${completion.first})."))
+                                }
+                                val refreshed = withContext(Dispatchers.IO) {
+                                    request(base + "/api/reminders", null, activeToken)
+                                }
+                                if (refreshed.first !in 200..299) throw IllegalStateException("Reminder was completed but the list refresh failed.")
+                                reminders = parseReminderItems(refreshed.second)
+                                status = if (completed.optBoolean("completed", true)) {
+                                    "Reminder completed."
+                                } else {
+                                    "Reminder completed; next occurrence scheduled."
+                                }
+                            } catch (error: Exception) {
+                                status = error.message ?: "Could not complete reminder."
+                            } finally { busy = false }
+                        }
+                    }) { Text(if (reminder.completed) "Done" else "Complete") }
+                }
+            }
+            Text("Android notifications", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "When enabled, JARVIS checks the backend about every 15 minutes while network access is available. Delivery may be delayed; this is not an alarm service.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+            Button(onClick = {
+                if (reminderNotificationsEnabled) {
+                    ReminderWorker.setEnabled(context, false)
+                    reminderNotificationsEnabled = false
+                    status = "Android reminder notifications disabled."
+                } else {
+                    val savedEndpoint = TokenVault.readBackendUrl(context)
+                    val savedToken = TokenVault.read(context)
+                    if (savedEndpoint.isNullOrBlank() || savedToken.isNullOrBlank()) {
+                        status = "Connect securely before enabling reminder notifications."
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        ReminderWorker.setEnabled(context, true)
+                        reminderNotificationsEnabled = true
+                        status = "Android reminder notifications enabled. Delivery is best-effort and may be delayed."
+                    }
+                }
+            }) { Text(if (reminderNotificationsEnabled) "Disable Android notifications" else "Enable Android notifications") }
+        }
+
+        SectionCard(title = "EXPLICIT MEMORIES") {
+            Text(
+                "Save only facts or preferences you choose to keep. Review or delete them here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+            OutlinedTextField(
+                value = memoryText,
+                onValueChange = { memoryText = it },
+                label = { Text("Memory to save") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(enabled = !busy && memoryText.isNotBlank(), onClick = {
+                    scope.launch {
+                        busy = true
+                        try {
+                            val base = endpoint.trim().trimEnd('/')
+                            val activeToken = TokenVault.read(context) ?: token
+                            require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before saving memories." }
+                            val payload = JSONObject().put("text", memoryText.trim()).put("category", "general").toString()
+                            val result = withContext(Dispatchers.IO) {
+                                request(base + "/api/memories", payload, activeToken)
+                            }
+                            val parsed = JSONObject(result.second)
+                            if (result.first !in 200..299) throw IllegalStateException(parsed.optString("detail", "Memory save failed (${result.first})."))
+                            memoryText = ""
+                            status = "Memory saved. Refresh to review it."
+                        } catch (error: Exception) {
+                            status = error.message ?: "Could not save memory."
+                        } finally { busy = false }
+                    }
+                }) { Text("Save memory") }
+                Button(enabled = !busy, onClick = {
+                    scope.launch {
+                        busy = true
+                        try {
+                            val base = endpoint.trim().trimEnd('/')
+                            val activeToken = TokenVault.read(context) ?: token
+                            require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before loading memories." }
+                            val result = withContext(Dispatchers.IO) {
+                                request(base + "/api/memories", null, activeToken)
+                            }
+                            val parsed = JSONObject(result.second)
+                            if (result.first !in 200..299) throw IllegalStateException(parsed.optString("detail", "Memory list failed (${result.first})."))
+                            val items = parsed.optJSONArray("items")
+                            memories = (0 until (items?.length() ?: 0)).mapNotNull { i ->
+                                items?.optJSONObject(i)?.let { item ->
+                                    item.optInt("id") to (item.optString("category") + ": " + item.optString("text"))
+                                }
+                            }
+                            status = "Loaded ${memories.size} saved memory(s)."
+                        } catch (error: Exception) {
+                            status = error.message ?: "Could not load memories."
+                        } finally { busy = false }
+                    }
+                }) { Text("Review memories") }
+            }
+            memories.forEach { (id, text) ->
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text, style = MaterialTheme.typography.bodyMedium)
+                    TextButton(enabled = !busy, onClick = {
+                        scope.launch {
+                            busy = true
+                            try {
+                                val base = endpoint.trim().trimEnd('/')
+                                val activeToken = TokenVault.read(context) ?: token
+                                require(base.startsWith("https://") && activeToken.length >= 32) { "Connect securely before deleting memories." }
+                                val result = withContext(Dispatchers.IO) {
+                                    request(base + "/api/memories/$id", null, activeToken, "DELETE")
+                                }
+                                if (result.first !in 200..299) throw IllegalStateException("Memory deletion failed (${result.first}).")
+                                memories = memories.filterNot { it.first == id }
+                                status = "Memory deleted."
+                            } catch (error: Exception) {
+                                status = error.message ?: "Could not delete memory."
+                            } finally { busy = false }
+                        }
+                    }) { Text("Delete") }
+                }
             }
         }
 
-        Text("Live Voice", style = MaterialTheme.typography.titleLarge)
-        Text("Starts only after you tap and grant microphone permission. Audio is sent to your configured Gemini Live backend.")
-        Button(enabled = !busy && !liveVoiceActive, onClick = {
-            if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                startLiveVoice()
-            } else {
-                liveVoicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            }
-        }) { Text("Start Live Voice") }
-        Button(enabled = liveVoiceActive, onClick = { liveVoiceController.interrupt() }) { Text("Interrupt JARVIS") }
-        Button(enabled = liveVoiceActive, onClick = { liveVoiceController.stop() }) { Text("Stop Live Voice") }
-        Text(liveVoiceStatus, style = MaterialTheme.typography.bodyMedium)
-
-        Text("Chat", style = MaterialTheme.typography.titleLarge)
-        Text(reply)
-        OutlinedTextField(
-            value = message,
-            onValueChange = { message = it },
-            label = { Text("Message JARVIS") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Button(
-            enabled = !busy && !voiceBusy,
-            onClick = {
-                if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    launchSpeech(speechLauncher, language) { voiceBusy = it }
-                } else {
-                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            }
-        ) { Text(if (voiceBusy) "Listening…" else "Speak to JARVIS") }
-        Button(
-            enabled = !busy && phoneSettingsAction != null,
-            onClick = {
-                val action = phoneSettingsAction
-                if (action != null) {
-                    val uri = if (action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) Uri.parse("package:" + context.packageName) else null
-                    openSystemSettings(context, action, status = { status = it }, uri = uri)
-                }
-            }
-        ) { Text("Run recognized phone command") }
-        Text("Supported voice commands: open device settings, open Wi-Fi settings, open Bluetooth settings, open JARVIS app permissions.")
-        Button(
-            enabled = !busy && message.isNotBlank(),
-            onClick = {
-                scope.launch {
-                    busy = true
-                    try {
-                        val base = endpoint.trim().trimEnd('/')
-                        require(base.startsWith("https://")) { "Connect to an HTTPS backend first." }
-                        val activeToken = TokenVault.read(context) ?: token
-                        require(activeToken.length >= 32) { "Connect with a device token first." }
-                        val payload = JSONObject().put("message", message.trim()).put("language", language).toString()
-                        val result = withContext(Dispatchers.IO) {
-                            request(base + "/api/chat", payload, activeToken)
-                        }
-                        val parsed = JSONObject(result.second)
-                        if (result.first !in 200..299) {
-                            throw IllegalStateException(parsed.optString("detail", "Chat failed with HTTP ${result.first}."))
-                        }
-                        reply = parsed.optString("reply", "JARVIS returned no text.")
-                        message = ""
-                        status = "Message sent securely over HTTPS."
-                    } catch (error: Exception) {
-                        status = error.message ?: "Chat request failed."
-                    } finally { busy = false }
-                }
-            }
-        ) { Text(if (busy) "Working…" else "Send") }
-
-        Button(onClick = {
-            TokenVault.clear(context)
-            ReminderWorker.setEnabled(context, false)
-            reminderNotificationsEnabled = false
-            liveVoiceController.stop()
-            liveVoiceActive = false
-            token = ""
-            endpoint = ""
-            pairedDeviceId = ""
-            status = "Local credentials cleared. The backend token remains active until an administrator revokes it."
-        }) { Text("Forget device token") }
-        Text(status)
+        SectionCard(title = "THIS DEVICE") {
+            Button(onClick = {
+                TokenVault.clear(context)
+                ReminderWorker.setEnabled(context, false)
+                reminderNotificationsEnabled = false
+                liveVoiceController.stop()
+                liveVoiceActive = false
+                token = ""
+                endpoint = ""
+                pairedDeviceId = ""
+                status = "Local credentials cleared. The backend token remains active until an administrator revokes it."
+            }) { Text("Forget device token") }
+            Text(status, style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }
 
