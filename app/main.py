@@ -1,7 +1,7 @@
 """Minimal FastAPI application.
 
-The production entry points -- ``jarvis serve``, ``scripts/start-windows.ps1``,
-``run_enhanced.py`` and the Docker image -- serve ``app.main_enhanced:app``,
+The production entry points -- ``jarvis serve``, ``scripts/start-windows.ps1`` and
+``run_enhanced.py`` -- serve ``app.main_enhanced:app``,
 which adds the WebSocket brain bridge, device pairing/revocation and
 ``/api/health/detailed``. This smaller app is kept for lightweight deployments
 and for the API tests that exercise shared routes. When a shared route changes,
