@@ -1,4 +1,4 @@
-.PHONY: help install dev run test lint typecheck format migrate upgrade clean docker-build docker-up docker-down
+.PHONY: help install dev run test lint typecheck format migrate upgrade clean
 
 help:
 	@echo "JARVIS Personal AI - Makefile commands"
@@ -11,7 +11,6 @@ help:
 	@echo "  make format    - Format code"
 	@echo "  make migrate   - Create an empty manual migration"
 	@echo "  make upgrade   - Apply migrations"
-	@echo "  make docker-up - Start with Docker Compose"
 	@echo "  make clean     - Clean cache files"
 
 install:
@@ -46,15 +45,6 @@ migrate:
 
 upgrade:
 	alembic upgrade head
-
-docker-build:
-	docker compose build
-
-docker-up:
-	docker compose up -d
-
-docker-down:
-	docker compose down
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
