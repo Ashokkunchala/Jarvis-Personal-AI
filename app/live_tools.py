@@ -9,7 +9,7 @@ explicit approval.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.personal_data import _connect
@@ -87,7 +87,7 @@ def execute(name: str, args: dict[str, Any] | None) -> dict[str, Any]:
                 rows = db.execute(
                     "SELECT title, due_at FROM reminders WHERE completed=0 ORDER BY due_at LIMIT ?", (limit,)
                 ).fetchall()
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             return {"success": True, "now_utc": now, "reminders": [
                 {"title": _clip(r["title"], 200), "due_at_utc": r["due_at"], "overdue": r["due_at"] <= now} for r in rows
             ]}
@@ -124,7 +124,7 @@ def prepare_approval(name: str, args: dict[str, Any] | None) -> tuple[dict[str, 
     if when.tzinfo is None:
         return None, "due_at must include a timezone offset."
     title = _clip(title, 200).strip()
-    return {"title": title, "due_at": when.astimezone(timezone.utc).isoformat()}, (
+    return {"title": title, "due_at": when.astimezone(UTC).isoformat()}, (
         f"Create reminder: {title} at {when.isoformat(timespec='minutes')}"
     )
 
@@ -137,7 +137,7 @@ def execute_approved(name: str, prepared: dict[str, Any]) -> dict[str, Any]:
         with _connect() as db:
             cur = db.execute(
                 "INSERT INTO reminders(title,due_at,created_at) VALUES(?,?,?)",
-                (prepared["title"], prepared["due_at"], datetime.now(timezone.utc).isoformat()),
+                (prepared["title"], prepared["due_at"], datetime.now(UTC).isoformat()),
             )
         return {"success": True, "reminder_id": cur.lastrowid, "title": prepared["title"], "due_at_utc": prepared["due_at"]}
     except Exception as exc:  # noqa: BLE001
