@@ -107,13 +107,6 @@ except Exception:  # pragma: no cover - brain optional in minimal deploys
     logging.getLogger("jarvis").exception("WebSocket bridge failed to load")
 
 
-try:
-    from app.live_voice import router as live_voice_router
-
-    app.include_router(live_voice_router)
-except Exception:  # pragma: no cover - live voice is optional
-    logging.getLogger("jarvis").exception("Live voice router failed to load")
-
 
 @app.get("/", include_in_schema=False)
 def home():
