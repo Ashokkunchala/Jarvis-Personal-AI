@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     language: Literal["auto", "en", "te"] = "auto"
     nickname: str = Field(default="", max_length=60)
+    mode: str = Field(default="assistant", max_length=20)
     history: list[ChatMessage] = Field(default_factory=list, max_length=20)
 
 
