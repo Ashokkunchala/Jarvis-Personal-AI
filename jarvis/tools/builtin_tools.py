@@ -891,6 +891,41 @@ def _register_devops(r: ToolRegistry) -> None:
         handler=lambda policy_json: review.review_iam_policy(policy_json),
         risk=Risk.SAFE, category="devops",
     ))
+    from jarvis.devops import k8s, logs, postmortem
+
+    r.register(Tool(
+        name="review_k8s",
+        description="Scan Kubernetes YAML manifests under a local path (privileged containers, hostNetwork, unpinned images, missing limits/probes, cluster-admin bindings, public LoadBalancers). Read-only, offline, no cluster call.",
+        parameters=_obj({"path": _str("File or directory of manifests.")}, ["path"]),
+        handler=lambda path: k8s.review_k8s(path),
+        risk=Risk.SAFE, category="devops",
+    ))
+    r.register(Tool(
+        name="triage_log",
+        description="Triage a local log file: counts known failure signatures (OOM, AccessDenied, timeouts, 502s, state locks), finds the peak error minute and suggests the matching runbook. Read-only, offline.",
+        parameters=_obj({"path": _str("Path to the log file."), "top": _int("How many repeated patterns to list (default 5).")}, ["path"]),
+        handler=lambda path, top=5: logs.triage_log(path, int(top)),
+        risk=Risk.SAFE, category="devops",
+    ))
+    r.register(Tool(
+        name="draft_postmortem",
+        description="Draft a blameless incident post-mortem in Markdown from facts you supply. Missing sections are flagged, nothing is invented. Does not write files or send anything.",
+        parameters=_obj(
+            {
+                "title": _str("Incident title."),
+                "summary": _str("One-paragraph summary."),
+                "impact": _str("Who or what was affected, and for how long."),
+                "timeline": _array("Timestamped events.", {"type": "string"}),
+                "root_cause": _str("Root cause."),
+                "detection": _str("How it was detected."),
+                "resolution": _str("How it was resolved."),
+                "action_items": _array("Follow-ups with owner and date.", {"type": "string"}),
+            },
+            ["title"],
+        ),
+        handler=lambda title, summary="", impact="", timeline=None, root_cause="", detection="", resolution="", action_items=None: postmortem.draft_postmortem(title, summary, impact, timeline, root_cause, detection, resolution, action_items),
+        risk=Risk.SAFE, category="devops",
+    ))
     r.register(Tool(
         name="devops_runbook",
         description="Troubleshooting checklist for ECS, EKS, Terraform state locks, Jenkins AWS pipelines, ALB 5xx and IAM AccessDenied. Omit topic to list topics.",
@@ -1059,6 +1094,73 @@ def _register_ownership(r: ToolRegistry) -> None:
         }, ["text"]),
         handler=_track,
         risk=Risk.LOW, category="ownership",
+    ))
+    from jarvis import personal
+
+    def _personal() -> Any:
+        return personal.default_store()
+
+    def _guard(fn):
+        def run(**kw):
+            try:
+                return {"success": True, **fn(**kw)}
+            except ValueError as exc:
+                return {"success": False, "error": str(exc)}
+        return run
+
+    r.register(Tool(
+        name="add_note",
+        description="Save a quick note or idea for the user (stored locally). Optional comma-separated tags.",
+        parameters=_obj({"text": _str("The note."), "tags": _str("Comma-separated tags, e.g. work,idea.")}, ["text"]),
+        handler=_guard(lambda text, tags="": {"note": _personal().add_note(text, tags)}),
+        risk=Risk.LOW, category="personal",
+    ))
+    r.register(Tool(
+        name="search_notes",
+        description="Search the user's saved notes by text or tag. Empty query lists the newest.",
+        parameters=_obj({"query": _str("Text or tag to look for."), "limit": _int("How many to return.", 1, 100)}),
+        handler=_guard(lambda query="", limit=20: {"notes": _personal().search_notes(query, limit)}),
+        risk=Risk.SAFE, category="personal",
+    ))
+    r.register(Tool(
+        name="log_expense",
+        description="Record money the user says they spent (local bookkeeping only, never moves money).",
+        parameters=_obj({
+            "amount": {"type": "number", "description": "Amount spent, above zero."},
+            "category": _str("e.g. food, rent, travel, subscriptions."),
+            "note": _str("Optional detail."),
+            "spent_on": _str("Optional date YYYY-MM-DD; defaults to today."),
+        }, ["amount", "category"]),
+        handler=_guard(lambda amount, category, note="", spent_on=None: {"expense": _personal().add_expense(amount, category, note, spent_on)}),
+        risk=Risk.LOW, category="personal",
+    ))
+    r.register(Tool(
+        name="expense_summary",
+        description="Spending totals by category for a month (YYYY-MM, default this month).",
+        parameters=_obj({"month": _str("Month like 2026-11.")}),
+        handler=_guard(lambda month=None: _personal().expense_summary(month)),
+        risk=Risk.SAFE, category="personal",
+    ))
+    r.register(Tool(
+        name="log_habit",
+        description="Mark a habit done for a day (default today) and get the streak, e.g. gym, reading, leetcode.",
+        parameters=_obj({"habit": _str("Habit name."), "day": _str("Optional date YYYY-MM-DD, not in the future.")}, ["habit"]),
+        handler=_guard(lambda habit, day=None: _personal().log_habit(habit, day)),
+        risk=Risk.LOW, category="personal",
+    ))
+    r.register(Tool(
+        name="habit_streaks",
+        description="All tracked habits with current and best streaks and whether each is done today.",
+        parameters=_obj({}),
+        handler=_guard(lambda: {"habits": _personal().habits()}),
+        risk=Risk.SAFE, category="personal",
+    ))
+    r.register(Tool(
+        name="daily_briefing",
+        description="Morning summary: overdue and open commitments, habits not done yet, spending today and this month. Local data only.",
+        parameters=_obj({}),
+        handler=_guard(lambda: _personal().briefing(_store().list())),
+        risk=Risk.SAFE, category="personal",
     ))
     r.register(Tool(
         name="list_commitments",
