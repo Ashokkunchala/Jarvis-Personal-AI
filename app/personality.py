@@ -38,3 +38,10 @@ def language_instruction(language: str) -> str:
     if language == "te":
         return "Reply in Telugu. Keep technical product names in English where clearer."
     return "Infer the preferred language from the user's message and follow natural English/Telugu code-switching."
+
+
+def mode_instruction(mode: str | None) -> str:
+    """Personality-mode overlay for a chat request; unknown modes fall back to the default."""
+    from jarvis.personality_modes import overlay_for
+
+    return overlay_for(mode)
