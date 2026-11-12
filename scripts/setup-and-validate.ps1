@@ -41,10 +41,10 @@ function New-Secret {
     return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
 }
 
-Write-Section "JARVIS Personal AI — setup and validation"
+Write-Section "JARVIS Personal AI - setup and validation"
 Write-Host "Repository: $RepoRoot"
-if (!(Test-Path (Join-Path $RepoRoot "app\main.py")) -or !(Test-Path (Join-Path $RepoRoot "requirements-dev.txt"))) {
-    throw "Run this script from the Jarvis-Personal-AI repository root. Expected app\main.py and requirements-dev.txt."
+if (!(Test-Path (Join-Path $RepoRoot "app\main_enhanced.py")) -or !(Test-Path (Join-Path $RepoRoot "requirements-dev.txt"))) {
+    throw "Run this script from the Jarvis-Personal-AI repository root. Expected app\main_enhanced.py and requirements-dev.txt."
 }
 if (!(Test-Path (Join-Path $RepoRoot "scripts\start-windows.ps1"))) {
     throw "scripts\start-windows.ps1 is missing from this checkout."
@@ -162,6 +162,7 @@ Pass ".env saved; secret values were not printed"
 Write-Section "Static and feature-presence checks"
 $requiredPaths = @(
     "app\main.py",
+    "app\main_enhanced.py",
     "app\live_voice.py",
     "jarvis_cli.py",
     "scripts\setup-windows.ps1",
@@ -195,22 +196,23 @@ try {
     Warn "No responding JARVIS API found at $healthUrl. This is normal before startup; run the start script to check the live endpoint."
 }
 
-Write-Section "Summary"
+Write-Section 'Summary'
 if ($Failures.Count -gt 0) {
-    Write-Host ("Setup completed with {0} failure(s):" -f $Failures.Count) -ForegroundColor Red
-    foreach ($item in $Failures) { Write-Host " - $item" -ForegroundColor Red }
-    throw "JARVIS setup/validation failed. Resolve the failures above and rerun this script."
+    Write-Host ('Setup completed with {0} failure(s):' -f $Failures.Count) -ForegroundColor Red
+    foreach ($item in $Failures) { Write-Host (' - ' + $item) -ForegroundColor Red }
+    throw 'JARVIS setup/validation failed. Resolve the failures above and rerun this script.'
 }
-Write-Host "Setup and local checks completed. This does not prove provider connectivity, microphone/speaker behavior, Android hardware actions, or production readiness." -ForegroundColor Green
-Write-Host ""
-Write-Host "Next steps:"
-Write-Host "  1. Review local .env; keep all API keys and tokens private."
-Write-Host ('  2. Start JARVIS with: .\scripts\start-windows.ps1')
-Write-Host ('  3. Open http://127.0.0.1:8000 and test chat/voice manually.')
-Write-Host ('  4. For terminal UI: .\.venv\Scripts\python.exe jarvis_cli.py tui')
-Write-Host ('  5. For Android, build/install the separate APK and test on a physical device.')
+Write-Host 'Setup and local checks completed. This does not prove provider connectivity, microphone/speaker behavior, Android hardware actions, or production readiness.' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Next steps:'
+Write-Host '  1. Review local .env; keep all API keys and tokens private.'
+Write-Host '  2. Start JARVIS with: .\scripts\start-windows.ps1'
+Write-Host '  3. Open http://127.0.0.1:8000 and test chat/voice manually.'
+Write-Host '  4. For terminal UI: .\.venv\Scripts\python.exe jarvis_cli.py tui'
+Write-Host '  5. For Android, build/install the separate APK and test on a physical device.'
 
 if ($StartAfterSetup) {
-    Write-Section "Starting JARVIS"
-    & (Join-Path $RepoRoot "scripts\start-windows.ps1")
+    Write-Section 'Starting JARVIS'
+    $startScript = Join-Path -Path $RepoRoot -ChildPath 'scripts\start-windows.ps1'
+    & $startScript
 }

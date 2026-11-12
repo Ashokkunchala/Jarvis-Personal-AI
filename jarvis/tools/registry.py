@@ -41,6 +41,9 @@ class Tool:
     requires_device: bool = False
     never_auto_approve: bool = False
     examples: list[str] = field(default_factory=list)
+    confirmation_preview: Callable[..., Any] | None = None
+    allow_always: bool = True
+    allow_auto_approve: bool = True
 
     @property
     def confirm_required(self) -> bool:
@@ -116,6 +119,9 @@ class ToolRegistry:
         category: str = "general",
         requires_confirmation: bool = False,
         requires_device: bool = False,
+        confirmation_preview: Callable[..., Any] | None = None,
+        allow_always: bool = True,
+        allow_auto_approve: bool = True,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator form of :meth:`register`."""
 
@@ -130,6 +136,9 @@ class ToolRegistry:
                     category=category,
                     requires_confirmation=requires_confirmation,
                     requires_device=requires_device,
+                    confirmation_preview=confirmation_preview,
+                    allow_always=allow_always,
+                    allow_auto_approve=allow_auto_approve,
                 )
             )
             return func
@@ -202,7 +211,8 @@ class ToolRegistry:
 
         if tool.never_auto_approve:
             auto_approve = False  # cloud-changing tools always need an explicit yes
-        if tool.confirm_required and not auto_approve:
+        confirmation_args = args
+        if tool.confirm_required and (not auto_approve or not tool.allow_auto_approve):
             if confirm is None:
                 # Fail closed: a tool that needs approval never runs without
                 # a way to ask the user.
@@ -211,12 +221,24 @@ class ToolRegistry:
                 return ToolResult(
                     name,
                     False,
-                    error="Confirmation required but no approval channel is available.",
+                    error="Confirmation required but no confirmation handler is available.",
                     elapsed=time.time() - started,
                     cancelled=True,
                 )
+            if tool.confirmation_preview is not None:
+                try:
+                    preview = await _invoke(tool.confirmation_preview, args)
+                except Exception as exc:
+                    logger.exception("Confirmation preview for %s failed", name)
+                    emit({"type": "tool_error", "tool": name, "error": "Could not prepare an action preview"})
+                    return ToolResult(name, False, error=f"Could not prepare an action preview: {exc}")
+                if isinstance(preview, dict) and preview.get("success") is False:
+                    error = str(preview.get("error", "Could not prepare an action preview"))
+                    emit({"type": "tool_error", "tool": name, "error": error})
+                    return ToolResult(name, False, error=error)
+                confirmation_args = {**args, "_preview": preview}
             try:
-                approved = await confirm(tool, args)
+                approved = await confirm(tool, confirmation_args)
             except Exception:
                 logger.exception("Confirmation callback failed")
                 approved = False

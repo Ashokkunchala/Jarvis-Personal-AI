@@ -9,16 +9,20 @@
 - Typed chat remains available as a fallback. The voice session can call three read-only tools (current time, open reminders, saved memories; see `app/live_tools.py`). Any other tool call is refused, and nothing in voice can change data or device state.
 
 - Server-side guardrails on each live session: session length, idle timeout, audio volume per minute and a concurrent-session cap (see CHANGELOG for the environment variables). Covered by tests with a fake provider client; not exercised against the real Live API.
+- The server also caps cumulative input per session at 16 MiB and permits at most two simultaneous Live Voice provider sessions per client IP in a single process; excess sessions are rejected with a clear limit status. This is a local guardrail, not a distributed or provider-account usage quota.
+
+- Browser wake word ("Hey Jarvis" checkbox) is opt-in and session-only. It uses the browser's built-in speech recognition, which in Chrome and Edge sends audio to the vendor speech service - it is not an offline wake word. The fully local wake word is `jarvis start` with the openWakeWord model (install `requirements-jarvis.txt`). The browser listener stops while a Live Voice session is active.
 
 ## Not yet proven / not production-ready
 
-- The Live API model configured in `app/live_voice.py` is a preview model ID. Confirm current availability and API account access using official Gemini Live documentation before relying on it; do not assume all API accounts have access.
-- The WebSocket query currently carries the configured bearer token because browser WebSocket APIs cannot attach an Authorization header. Treat URLs as sensitive, keep server logs from recording query strings, and replace this compatibility path with short-lived one-time session tickets before public use.
-- The audio client and server protocol have been committed but still require a live API-key smoke test and browser microphone/playback tests. They have not been confirmed on a physical Android phone.
-- The browser uses Web Audio `ScriptProcessorNode` for a starter implementation. A production client should move capture to AudioWorklet, add bounded queues/backpressure, better resampling, and explicit audio focus/cancel handling.
+- The configured model `gemini-3.8-live` is listed as a stable Gemini Live model. The owner's API account still needs a real handshake test; model listing alone does not prove account access ([official model page](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live)).
+- The browser exchanges its bearer token for a single-use, 60-second WebSocket ticket because browser WebSocket APIs cannot attach an Authorization header. The in-memory ticket store is process-local; keep the server private and logs free of query strings.
+- The audio client and server protocol are served through the backend's `/static` route and have bounded per-frame and per-session input budgets. They still require a live API-key smoke test and browser microphone/playback tests; they have not been confirmed on a physical Android phone.
+- Browser capture uses an AudioWorklet to resample into bounded 40 ms PCM blocks; the Android client sends 40 ms blocks. The browser and Android clients cap their outbound audio queues, and the server caps total session audio. Google recommends 20–40 ms Live API audio chunks; current browser/device quality, backpressure under sustained congestion, and audio focus still need hands-on verification ([Live API best practices](https://ai.google.dev/gemini-api/docs/live-api/best-practices)).
+- Browser input/output transcripts are shown in the Live Voice transcript panel. Unexpected transport/server disconnects (1006/1011/1012) trigger at most two delayed reconnect attempts with fresh one-time tickets; authentication, origin, normal stop, and provider-configuration failures do not auto-retry. The visible Stop control cancels a pending retry. This recovery path still needs browser/device testing.
 - User speech may interrupt model playback only after the backend/model reports interruption or the user taps **Interrupt JARVIS**. The current stop control sends an interrupt instruction; confirm actual barge-in behavior with the Live API session.
 - Live audio responses and transcripts are streamed to the page. The raw audio is not explicitly saved by the client, but audio is sent to the configured Gemini API as part of the Live session.
-- Android remains tap-to-speak via system speech recognition + system TTS; native continuous Live audio is not yet connected to the WebSocket.
+- The Android client now has an explicit start/stop/interrupt Live Voice controller using a one-time ticket, `AudioRecord` 16 kHz PCM input, and `AudioTrack` 24 kHz output. It runs only while the visible activity is active; its build, permission flows, and audio behavior still need device verification.
 
 ## Voice approvals
 `create_reminder` is the only state-changing voice tool. The server sends `{"type":"approval_request","id","summary"}` and waits; the client answers `{"type":"approval","id","approve":true|false}`. Anything except `approve: true` for the pending id (timeout, disconnect, wrong id, invalid arguments) means nothing is changed. Untested with a real browser and real Live model.
@@ -27,7 +31,7 @@
 
 - Never expose the Gemini key in browser JS or Android resources.
 - Do not expose this shared-token prototype through a public tunnel.
-- Before a remote deployment, implement per-device pairing/revocation, one-time live session tickets, rate/time/token budgets, request quotas, session limits, safe error responses, audit logs with token redaction, TLS, allowed origins, and backup/restore.
+- Before a remote deployment, implement per-device pairing/revocation, rate/time/token budgets, request quotas, session limits, safe error responses, audit logs with token redaction, TLS, allowed origins, and backup/restore.
 - No hidden microphone or automatic background recording. Show when audio is being captured and provide an obvious stop button.
 - The live audio route executes only the read-only allow-list in `app/live_tools.py`. Changes and device actions require the separate JARVIS confirmation workflow; a voice-side approval step is not built yet.
 
@@ -39,10 +43,13 @@
 - [ ] Live API: current model is available, setup handshake succeeds, and a real voice turn completes.
 - [ ] Browser: PCM input and output sound correct on current Chrome and Edge.
 - [ ] Browser: stop releases the microphone and stops queued audio; interruption behavior is verified.
-- [ ] WebSocket: invalid token, disallowed origin, oversized audio, malformed base64, and provider timeout paths tested.
+- [x] WebSocket: invalid token is rejected and provider timeout is returned as a client error event (automated regression tests in `tests/test_ws.py`).
+- [x] Rejected-origin and invalid-ticket WebSocket paths plus malformed/oversized audio-frame validation have regression tests.
 - [ ] Physical Android 14 device: HTTPS, token storage/clear, TTS, permission denial, and typed fallback tested.
-- [ ] Native Android full-duplex audio transport implemented and tested.
-- [ ] Short-lived session tickets replace tokens in WebSocket query parameters.
+- [x] Native Android full-duplex audio transport implemented with visible microphone controls and session-ticket authentication.
+- [x] Browser transcript display and bounded transient reconnect retries with a visible cancel/stop path are implemented; live browser behavior remains unverified.
+- [ ] Build and test native Android audio on an Android 14 device, including permission denial, interruption, disconnect, and stop releasing microphone/speaker resources.
+- [x] Short-lived one-time session tickets replace bearer tokens in WebSocket query parameters (local regression coverage; not a distributed ticket store).
 - [ ] Device-action broker integrated only with visible confirmation and cancellation.
 - [ ] Production deployment threat model and review complete.
 

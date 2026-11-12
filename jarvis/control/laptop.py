@@ -177,8 +177,8 @@ class LaptopController:
     def copy_path(self, source: str, destination: str, overwrite: bool = False) -> dict[str, Any]:
         return files.copy(source, destination, overwrite)
 
-    def move_path(self, source: str, destination: str) -> dict[str, Any]:
-        return files.move(source, destination)
+    def move_path(self, source: str, destination: str, overwrite: bool = False) -> dict[str, Any]:
+        return files.move(source, destination, overwrite)
 
     def rename_path(self, path: str, new_name: str) -> dict[str, Any]:
         return files.rename(path, new_name)

@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - dotenv is optional for library use
 class JarvisConfig:
     # API
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     use_gemini_live: bool = os.getenv("USE_GEMINI_LIVE", "true").lower() == "true"
 
     # Realtime voice (Gemini Live)

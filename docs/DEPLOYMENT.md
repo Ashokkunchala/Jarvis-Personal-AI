@@ -6,12 +6,12 @@ Run the prototype locally on Windows while validating Gemini integration, browse
 
 ## Why not public hosting yet?
 
-Chat and personal-data endpoints now require a configured bearer token, but this is still a shared-token prototype. It lacks per-device pairing/revocation, rate limiting, account-level authorization, production audit/monitoring, and complete security hardening. The Android client has not yet passed an end-to-end device test. Do not deploy to a public URL or expose it through a tunnel yet.
+Chat and personal-data endpoints require a configured bearer token. The enhanced CLI backend can issue and revoke per-device tokens, and the Android client now has pairing/revocation controls, but the client still needs a build and end-to-end device test. HTTP `/api/` routes have a configurable per-process, per-IP request limit, and Live Voice allows at most two concurrent provider sessions per client IP per process. Neither control is a distributed or per-device quota. This remains a prototype without provider-account usage budgets, multi-user authorization, production audit/monitoring, or complete security hardening. Do not deploy to a public URL or expose it through a tunnel yet.
 
 ## Required before cloud deployment
 
-1. Replace the shared token with per-device credentials, pairing, revocation, rotation, and authorization.
-2. Add request throttling, payload limits, timeouts, usage budgets, and abuse monitoring.
+1. Verify per-device pairing/revocation on Android, add master-token rotation, and design production user/account authorization.
+2. The app currently applies per-process IP throttling and a 1 MiB `/api/` body cap; add distributed request/time/token budgets, matching reverse-proxy body and connection limits, timeouts, and abuse monitoring. The interval scheduler is single-process; add a distributed scheduler/lease before using multiple workers.
 3. Put the service behind HTTPS with a managed secret store.
 4. Restrict CORS to the exact production frontend origin and protect/disable interactive API docs as appropriate.
 5. Add log redaction, retention rules, monitoring, and key-rotation procedures.

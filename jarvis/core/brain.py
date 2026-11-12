@@ -35,7 +35,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from jarvis.telemetry import record_runtime_event
 from jarvis.tools.builtin_tools import build_registry
+from jarvis.tools.orchestrator import ToolTask, ToolTaskOrchestrator
 from jarvis.tools.registry import Tool, ToolRegistry, ToolResult
 
 logger = logging.getLogger("jarvis.brain")
@@ -189,7 +191,7 @@ class JarvisBrain:
     ) -> None:
         load_env()
         self.api_key = (api_key or os.getenv("GEMINI_API_KEY", "")).strip()
-        self.model = (model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")).strip()
+        self.model = (model or os.getenv("GEMINI_MODEL", "gemini-3.5-flash")).strip()
         self.provider_preference = (
             provider or os.getenv("JARVIS_AI_PROVIDER", "auto") or "auto"
         ).strip().lower()
@@ -343,11 +345,15 @@ class JarvisBrain:
                 continue
 
             stream = None
+            provider_started = time.perf_counter()
             try:
                 stream = await client.aio.models.generate_content_stream(
                     model=candidate, contents=contents, config=config
                 )
             except Exception as exc:
+                record_runtime_event("provider", provider="gemini", model=candidate,
+                                     elapsed=time.perf_counter() - provider_started,
+                                     success=False, error_type=type(exc).__name__)
                 if _is_transient(exc):
                     _mark_bad(candidate)
                     if idx + 1 < len(models):
@@ -367,6 +373,9 @@ class JarvisBrain:
             except StopAsyncIteration:
                 first = None
             except TimeoutError:
+                record_runtime_event("provider", provider="gemini", model=candidate,
+                                     elapsed=time.perf_counter() - provider_started,
+                                     success=False, error_type="FirstTokenTimeout")
                 await _safe_close(stream)
                 _mark_bad(candidate)
                 if idx + 1 < len(models):
@@ -381,6 +390,9 @@ class JarvisBrain:
                     "and no fallback model is available."
                 )
             except Exception as exc:
+                record_runtime_event("provider", provider="gemini", model=candidate,
+                                     elapsed=time.perf_counter() - provider_started,
+                                     success=False, error_type=type(exc).__name__)
                 await _safe_close(stream)
                 if _is_transient(exc):
                     _mark_bad(candidate)
@@ -402,10 +414,15 @@ class JarvisBrain:
                 except StopAsyncIteration:
                     break
                 except TimeoutError:
+                    record_runtime_event("provider", provider="gemini", model=candidate,
+                                         elapsed=time.perf_counter() - provider_started,
+                                         success=False, error_type="ChunkTimeout")
                     raise TimeoutError(
                         f"{candidate} stalled mid-response for {self.chunk_timeout:.0f}s"
                     ) from None
                 yield ("chunk", nxt)
+            record_runtime_event("provider", provider="gemini", model=candidate,
+                                 elapsed=time.perf_counter() - provider_started, success=True)
             return
 
         if skipped_cooling:
@@ -520,6 +537,7 @@ class JarvisBrain:
         for index, provider in enumerate(providers):
             stats = TurnStats()
             emitted = False
+            provider_started = time.perf_counter()
             try:
                 if provider == "gemini":
                     runner = self._ask_gemini(message, confirm, auto_approve, system_instruction, stats)
@@ -529,8 +547,13 @@ class JarvisBrain:
                     if event.get("type") in committed:
                         emitted = True
                     yield event
+                record_runtime_event("provider", provider=provider, action="assistant_turn",
+                                     elapsed=time.perf_counter() - provider_started, success=True)
                 return
             except Exception as exc:
+                record_runtime_event("provider", provider=provider, action="assistant_turn",
+                                     elapsed=time.perf_counter() - provider_started,
+                                     success=False, error_type=type(exc).__name__)
                 logger.warning("AI provider %s failed during ask: %s", provider, exc)
                 if emitted:
                     yield {"type": "error", "error": _friendly_error(exc, provider)}
@@ -568,38 +591,74 @@ class JarvisBrain:
         stats: TurnStats,
         results: list[tuple[str, dict[str, Any]]],
     ) -> AsyncIterator[dict[str, Any]]:
-        """Run tool calls, yielding lifecycle events; append (name, payload) to results."""
-        for call in calls:
-            name = call["name"]
-            args = call.get("args") or {}
-            tool = self.registry.get(name)
-            yield {
-                "type": "tool_start",
-                "tool": name,
-                "args": args,
-                "risk": tool.risk.name if tool else "UNKNOWN",
-                "category": tool.category if tool else "general",
-            }
-            if tool is None:
-                payload: dict[str, Any] = {"success": False, "error": f"Unknown tool {name}"}
-            else:
-                result: ToolResult = await self.registry.execute(
-                    name,
-                    args,
-                    confirm=confirm,
-                    auto_approve=auto_approve,
-                    on_event=self._forward_lifecycle(stats),
+        """Orchestrate model tool calls and preserve their response ordering."""
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        tasks = [
+            ToolTask(task_id=f"call-{index}", tool=call["name"], args=call.get("args") or {})
+            for index, call in enumerate(calls)
+        ]
+        orchestrator = ToolTaskOrchestrator(self.registry, max_parallel=3)
+        run = asyncio.create_task(orchestrator.run(
+            tasks,
+            confirm=confirm,
+            auto_approve=auto_approve,
+            on_event=queue.put_nowait,
+        ))
+
+        try:
+            while not run.done() or not queue.empty():
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=0.1)
+                except TimeoutError:
+                    continue
+                task_id = event.get("task_id", "")
+                try:
+                    index = int(task_id.removeprefix("call-"))
+                    call = calls[index]
+                except (ValueError, IndexError):
+                    continue
+                name = call["name"]
+                tool = self.registry.get(name)
+                kind = event.get("type")
+                record_runtime_event(
+                    "tool",
+                    action=kind,
+                    task_id=task_id,
+                    tool=name,
+                    risk=tool.risk.name if tool else "UNKNOWN",
+                    success=event.get("success") if isinstance(event.get("success"), bool) else None,
+                    elapsed=event.get("elapsed"),
+                    attempt=event.get("attempt"),
+                    error_type="ToolFailure" if event.get("error") else None,
                 )
-                stats.tools.append(name)
-                payload = json.loads(result.for_model())
-                yield {
-                    "type": "tool_end" if result.ok and not result.cancelled else
-                           ("tool_cancelled" if result.cancelled else "tool_error"),
-                    "tool": name,
-                    "ok": result.ok and not result.cancelled,
-                    "summary": result.error if not result.ok else _short(result.data),
-                    "elapsed": round(result.elapsed, 3),
-                }
+                if kind == "task_start":
+                    if tool is not None:
+                        stats.tools.append(name)
+                    yield {"type": "tool_start", "tool": name, "args": call.get("args") or {},
+                           "risk": tool.risk.name if tool else "UNKNOWN",
+                           "category": tool.category if tool else "general"}
+                elif kind == "task_end":
+                    yield {"type": "tool_end" if event.get("success") else "tool_error",
+                           "tool": name, "ok": event.get("success", False),
+                           "summary": event.get("summary") or event.get("error") or "failed",
+                           "elapsed": event.get("elapsed", 0.0)}
+                elif kind == "task_cancelled":
+                    yield {"type": "tool_cancelled", "tool": name}
+                elif kind == "task_retry":
+                    yield {"type": "tool_retry", "tool": name, "attempt": event.get("attempt")}
+                elif kind == "task_skipped":
+                    yield {"type": "tool_error", "tool": name, "error": event.get("error", "prerequisite failed")}
+
+            task_results = await run
+        except BaseException:
+            run.cancel()
+            await asyncio.gather(run, return_exceptions=True)
+            raise
+
+        for index, call in enumerate(calls):
+            name = call["name"]
+            result: ToolResult = task_results[f"call-{index}"]
+            payload = json.loads(result.for_model())
             results.append((name, payload if isinstance(payload, dict) else {"result": payload}))
 
     async def _ask_gemini(

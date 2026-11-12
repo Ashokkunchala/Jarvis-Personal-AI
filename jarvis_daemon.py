@@ -12,8 +12,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from jarvis.core.agent.jarvis_agent import JarvisAgent
 from jarvis.config.settings import config
+from jarvis.core.agent.jarvis_agent import JarvisAgent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,7 +35,7 @@ async def main():
     logger.info(f"System Control: {'Enabled' if config.system_control_enabled else 'Disabled'}")
     logger.info(f"Memory: {'Enabled' if config.memory_enabled else 'Disabled'}")
     logger.info("=" * 60)
-    
+
     try:
         agent = JarvisAgent()
         await agent.initialize()

@@ -1,19 +1,16 @@
 """Enhanced authenticated local personal-data APIs backed by SQLite."""
-import hmac
-import sqlite3
 import json
-from datetime import datetime, timedelta, timezone
+import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.research import search_web
-from app.core.config import get_settings
 from app.core.auth import require_api_token
+from app.core.config import get_settings
 
 router = APIRouter(prefix="/api", tags=["personal data"])
 limiter = Limiter(key_func=get_remote_address)
@@ -87,7 +84,7 @@ def get_memory_context() -> str:
 
 
 def _now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class MemoryCreate(BaseModel):
@@ -99,7 +96,7 @@ class MemoryCreate(BaseModel):
 class ReminderCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     due_at: datetime
-    recurrence: Optional[str] = Field(default=None, max_length=50)
+    recurrence: str | None = Field(default=None, max_length=50)
 
 
 class WorkoutCreate(BaseModel):
@@ -175,7 +172,7 @@ def create_reminder(request: Request, item: ReminderCreate):
     with _connect() as db:
         cur = db.execute(
             "INSERT INTO reminders(title,due_at,created_at,recurrence) VALUES(?,?,?,?)",
-            (item.title.strip(), item.due_at.astimezone(timezone.utc).isoformat(), _now(), item.recurrence)
+            (item.title.strip(), item.due_at.astimezone(UTC).isoformat(), _now(), item.recurrence)
         )
         row = db.execute("SELECT * FROM reminders WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
@@ -184,10 +181,10 @@ def create_reminder(request: Request, item: ReminderCreate):
 @router.get("/reminders/due", dependencies=[Depends(require_api_token)])
 @limiter.limit("60/minute")
 def due_reminders(request: Request):
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     with _connect() as db:
         rows = db.execute(
-            "SELECT * FROM reminders WHERE completed=0 AND due_at<=? ORDER BY due_at", 
+            "SELECT * FROM reminders WHERE completed=0 AND due_at<=? ORDER BY due_at",
             (now,)
         ).fetchall()
     return {"items": [dict(row) for row in rows]}
@@ -206,7 +203,7 @@ def complete_reminder(request: Request, reminder_id: int):
 @router.post("/reminders/{reminder_id}/snooze", dependencies=[Depends(require_api_token)])
 @limiter.limit("30/minute")
 def snooze_reminder(request: Request, reminder_id: int, minutes: int = 10):
-    snooze_until = (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat()
+    snooze_until = (datetime.now(UTC) + timedelta(minutes=minutes)).isoformat()
     with _connect() as db:
         cur = db.execute("UPDATE reminders SET snoozed_until=?, completed=0 WHERE id=?", (snooze_until, reminder_id))
         if not cur.rowcount:
@@ -234,7 +231,7 @@ def list_workouts(request: Request):
 @router.post("/workouts", status_code=201, dependencies=[Depends(require_api_token)])
 @limiter.limit("30/minute")
 def create_workout(request: Request, item: WorkoutCreate):
-    performed = item.performed_at or datetime.now(timezone.utc)
+    performed = item.performed_at or datetime.now(UTC)
     with _connect() as db:
         cur = db.execute(
             "INSERT INTO workouts(activity,duration_minutes,notes,performed_at,created_at) VALUES(?,?,?,?,?)",
@@ -247,7 +244,7 @@ def create_workout(request: Request, item: WorkoutCreate):
 @router.get("/workouts/summary", dependencies=[Depends(require_api_token)])
 @limiter.limit("60/minute")
 def workout_summary(request: Request):
-    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    since = (datetime.now(UTC) - timedelta(days=7)).isoformat()
     with _connect() as db:
         recent = db.execute(
             "SELECT COUNT(*) AS sessions, COALESCE(SUM(duration_minutes),0) AS minutes "

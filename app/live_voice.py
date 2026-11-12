@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 from urllib.parse import urlsplit
 
@@ -49,8 +50,34 @@ router = APIRouter()
 
 MAX_AUDIO_BYTES = 64 * 1024
 MAX_TEXT_CHARS = 4000
+MAX_SESSION_AUDIO_BYTES = 16 * 1024 * 1024
+MAX_SESSION_SECONDS = 10 * 60
 LIVE_TICKET_TTL_SECONDS = 60
+MAX_CONCURRENT_LIVE_SESSIONS_PER_IP = 2
 _live_tickets: dict[str, float] = {}
+_active_live_sessions: dict[str, int] = {}
+_live_session_lock = threading.Lock()
+
+
+def _reserve_live_session(client_key: str) -> bool:
+    """Atomically cap concurrent provider sessions from one client address."""
+    key = client_key or "unknown"
+    with _live_session_lock:
+        active = _active_live_sessions.get(key, 0)
+        if active >= MAX_CONCURRENT_LIVE_SESSIONS_PER_IP:
+            return False
+        _active_live_sessions[key] = active + 1
+        return True
+
+
+def _release_live_session(client_key: str) -> None:
+    key = client_key or "unknown"
+    with _live_session_lock:
+        active = _active_live_sessions.get(key, 0)
+        if active <= 1:
+            _active_live_sessions.pop(key, None)
+        else:
+            _active_live_sessions[key] = active - 1
 
 # Per-session guardrails. They bound cost and exposure; override with env vars.
 MAX_SESSION_SECONDS = int(os.getenv("JARVIS_LIVE_MAX_SESSION_SECONDS", "900"))
@@ -121,6 +148,20 @@ def _consume_live_ticket(ticket: str) -> bool:
     return expires_at is not None and expires_at > time.monotonic()
 
 
+def _decode_audio_frame(encoded: object) -> bytes:
+    """Validate and decode one bounded, non-empty PCM16 audio frame."""
+    max_encoded_size = ((MAX_AUDIO_BYTES + 2) // 3) * 4 + 8
+    if not isinstance(encoded, str) or len(encoded) > max_encoded_size:
+        raise ValueError("Invalid or oversized audio frame.")
+    try:
+        pcm = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ValueError("Audio data is not valid base64.") from error
+    if not pcm or len(pcm) > MAX_AUDIO_BYTES or len(pcm) % 2:
+        raise ValueError("Audio must be non-empty PCM16 within the frame limit.")
+    return pcm
+
+
 @router.post("/api/live-voice-ticket", dependencies=[Depends(require_device_token)])
 def create_live_voice_ticket():
     """Mint a 60-second single-use ticket after bearer-token authentication."""
@@ -173,10 +214,14 @@ async def live_voice(websocket: WebSocket):
     if _active_sessions >= MAX_CONCURRENT_SESSIONS:
         await websocket.close(code=1013, reason="too many live voice sessions")
         return
+    client_info = websocket.client
+    client_key = str(client_info.host) if client_info else "unknown"
+    if not _reserve_live_session(client_key):
+        await websocket.close(code=4429, reason="live voice session limit reached")
+        return
     guard = SessionGuard()
+    session_audio_bytes = 0
 
-    await websocket.accept()
-    client = genai.Client(api_key=settings.gemini_api_key)
     receive_task: asyncio.Task | None = None
     pending_approvals: dict[str, asyncio.Future] = {}
 
@@ -197,7 +242,7 @@ async def live_voice(websocket: WebSocket):
                                     "summary": summary, "expires_in": APPROVAL_TIMEOUT_SECONDS})
             try:
                 approved = await asyncio.wait_for(future, timeout=APPROVAL_TIMEOUT_SECONDS)
-            except (asyncio.TimeoutError, asyncio.CancelledError):
+            except (TimeoutError, asyncio.CancelledError):
                 approved = False
         finally:
             pending_approvals.pop(request_id, None)
@@ -206,6 +251,8 @@ async def live_voice(websocket: WebSocket):
         return live_tools.response_payload(await asyncio.to_thread(live_tools.execute_approved, name, prepared))
     _active_sessions += 1
     try:
+        await websocket.accept()
+        client = genai.Client(api_key=settings.gemini_api_key)
         config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": SYSTEM_INSTRUCTIONS + (
@@ -281,7 +328,7 @@ async def live_voice(websocket: WebSocket):
                 if reason is None:
                     try:
                         raw = await asyncio.wait_for(websocket.receive_text(), timeout=max(guard.remaining(), 0.01))
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         reason = guard.expiry_reason() or "Session closed after being idle."
                 if reason is not None:
                     await _send(websocket, {"type": "error", "message": reason + " Start a new session to continue."})
@@ -320,19 +367,15 @@ async def live_voice(websocket: WebSocket):
                     guard.touch()
                     await session.send_realtime_input(text=text.strip())
                 elif kind == "audio":
-                    encoded = message.get("data")
-                    max_encoded_size = ((MAX_AUDIO_BYTES + 2) // 3) * 4 + 8
-                    if not isinstance(encoded, str) or len(encoded) > max_encoded_size:
-                        await _send(websocket, {"type": "error", "message": "Invalid or oversized audio frame."})
-                        continue
                     try:
-                        pcm = base64.b64decode(encoded, validate=True)
-                    except (binascii.Error, ValueError):
-                        await _send(websocket, {"type": "error", "message": "Audio data is not valid base64."})
+                        pcm = _decode_audio_frame(message.get("data"))
+                    except ValueError as error:
+                        await _send(websocket, {"type": "error", "message": str(error)})
                         continue
-                    if not pcm or len(pcm) > MAX_AUDIO_BYTES or len(pcm) % 2:
-                        await _send(websocket, {"type": "error", "message": "Audio must be non-empty PCM16 frames within the frame limit."})
-                        continue
+                    session_audio_bytes += len(pcm)
+                    if session_audio_bytes > MAX_SESSION_AUDIO_BYTES:
+                        await _send(websocket, {"type": "error", "message": "Live voice session audio budget reached."})
+                        break
                     if not guard.allow_audio(len(pcm)):
                         await _send(websocket, {"type": "error", "message": "Audio rate limit exceeded; slow down."})
                         continue
@@ -363,3 +406,4 @@ async def live_voice(websocket: WebSocket):
                 await websocket.close()
             except Exception:
                 pass
+        _release_live_session(client_key)

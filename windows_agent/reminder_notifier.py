@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -73,14 +73,14 @@ def process_due(items: list[dict], state: dict, notify=show_toast, now: float | 
             reminders[reminder_id] = {
                 "status": "retrying", "attempts": attempts,
                 "last_error": message, "next_retry_at": now + delay,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
             statuses.append(f"Reminder #{reminder_id}: delivery failed (attempt {attempts}); retrying in {delay}s: {message}")
         else:
             reminders[reminder_id] = {
                 "status": "delivered", "attempts": attempts, "last_error": "",
-                "delivered_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "delivered_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
             statuses.append(f"Reminder #{reminder_id}: toast delivered (attempt {attempts}).")
     return statuses

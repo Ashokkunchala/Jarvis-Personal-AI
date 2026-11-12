@@ -19,12 +19,6 @@
   const send=message=>{if(socket&&socket.readyState===WebSocket.OPEN){socket.send(JSON.stringify(message));return true;}return false;};
   const toBase64=bytes=>{let binary="";for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+0x8000,bytes.length)));return btoa(binary);};
   const fromBase64=value=>{const binary=atob(value),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes;};
-  const downsample=(input,rate)=>{
-    if(rate===16000)return input;
-    const ratio=rate/16000,output=new Float32Array(Math.floor(input.length/ratio));
-    for(let i=0;i<output.length;i++){let sum=0,count=0;for(let j=Math.floor(i*ratio),end=Math.min(Math.floor((i+1)*ratio),input.length);j<end;j++){sum+=input[j];count++;}output[i]=count?sum/count:0;}
-    return output;
-  };
   const toPcm16=samples=>{
     const pcm=new Int16Array(samples.length);
     for(let i=0;i<samples.length;i++){const x=Math.max(-1,Math.min(1,samples[i]));pcm[i]=x<0?Math.round(x*32768):Math.round(x*32767);}
@@ -99,7 +93,7 @@
       case "tool":status("Tool "+String(m.name)+(m.ok?" finished.":" did not run."),!m.ok);break;
       case "approval_request":showApproval(m);break;
       case "error":status(m.message||"Live voice error.",true);break;
-      case "closed":status("Live audio session closed.",true);break;
+      case "closed":status("Live audio session closed. Checking whether it can reconnect…",true);if(socket&&socket.readyState===WebSocket.OPEN)socket.close(1011,"provider session ended");break;
     }
   }
   async function startCapture(){
@@ -114,11 +108,16 @@
     if(abandoned()){stream.getTracks().forEach(t=>t.stop());stream=null;inputContext.close().catch(()=>{});inputContext=null;return;}
     source=inputContext.createMediaStreamSource(stream);processor=inputContext.createScriptProcessor(4096,1,1);silentGain=inputContext.createGain();silentGain.gain.value=0;
     source.connect(processor);processor.connect(silentGain);silentGain.connect(inputContext.destination);
-    processor.onaudioprocess=event=>{
-      if(!active||!socket||socket.readyState!==WebSocket.OPEN)return;
-      const frame=toPcm16(downsample(event.inputBuffer.getChannelData(0),inputContext.sampleRate));
-      const maxBytes=3200;
-      for(let offset=0;offset<frame.length;offset+=maxBytes){let chunk=frame.subarray(offset,Math.min(offset+maxBytes,frame.length));if(chunk.length%2)chunk=chunk.subarray(0,chunk.length-1);if(chunk.length)send({type:"audio",data:toBase64(chunk)});}
+    processor.port.onmessage=event=>{
+      try{
+        if(!active||!socket||socket.readyState!==WebSocket.OPEN)return;
+        if(socket.bufferedAmount>256*1024){
+          const now=Date.now();
+          if(now-lastQueueWarning>5000){status("Network is congested; some live audio may be dropped.",true);lastQueueWarning=now;}
+          return;
+        }
+        send({type:"audio",data:toBase64(toPcm16(event.data))});
+      }finally{try{processor?.port.postMessage({type:"credit"});}catch(_){}}
     };
     active=true;setUi("listening","Microphone is on. Audio is streaming to your JARVIS server.");status("Live microphone active. Select Stop Live Voice to disconnect.");
   }
@@ -160,15 +159,23 @@
     const scheme=location.protocol==="https:"?"wss:":"ws:";
     socket=new WebSocket(scheme+"//"+location.host+"/api/live-voice?ticket="+encodeURIComponent(ticketData.ticket));
     socket.addEventListener("message",onMessage);
-    socket.addEventListener("open",async()=>{try{await startCapture();}catch(e){status(e.message,true);releaseCapture(false);socket?.close(1000,"microphone unavailable");}});
+    socket.addEventListener("open",async()=>{try{reconnecting=false;reconnectAttempts=0;await startCapture();}catch(e){status(e.message,true);releaseCapture(false);socket?.close(1000,"microphone unavailable");}});
     socket.addEventListener("error",()=>status("Live connection failed. Check API token, backend config and model access.",true));
     socket.addEventListener("close",event=>{
       releaseCapture(false);socket=null;
       if(!userStopped&&!event.wasClean&&![4401,4403,1013].includes(event.code)){scheduleReconnect();return;}
       if(event.code===4401)status("Live authorization failed. Check your JARVIS token.",true);
       else if(event.code===4403)status("This page origin is not allowed for live voice.",true);
+      else if(event.code===4429)status("Live Voice session limit reached. Stop another active session and try again.",true);
       else if(event.code===1013)status("Live voice is unavailable: configure a supported Gemini Live model and API key.",true);
       else status("Live voice disconnected ("+event.code+").",event.code!==1000);
+      // Only retry transient transport/server disconnects. Authentication,
+      // origin, normal user stop, and provider configuration errors need action.
+      if([1006,1011,1012].includes(event.code)&&reconnectAttempts<2){
+        reconnectAttempts++;reconnecting=true;setUi("thinking","Connection dropped. Reconnecting shortly; select Stop to cancel.");
+        status("Live voice lost its connection. Retrying ("+reconnectAttempts+"/2)…",true);
+        reconnectTimer=setTimeout(()=>{reconnectTimer=null;if(!reconnecting)return;connect().catch(e=>{reconnecting=false;setUi("","Reconnect failed.");status("Live voice reconnect failed: "+e.message,true);});},reconnectAttempts*1000);
+      }else{reconnecting=false;reconnectAttempts=0;setUi("","Live voice stopped.");}
     });
   }
   $("liveVoiceConnect").addEventListener("click",()=>{userStopped=false;attempt=0;reconnecting=false;connect().catch(e=>status(e.message,true));});

@@ -76,7 +76,7 @@ class ConfirmModal(ModalScreen[bool]):
             with Horizontal(classes="confirm-row"):
                 yield Button("APPROVE  (y)", id="confirm-approve", variant="success")
                 yield Button("REJECT  (n)", id="confirm-reject", variant="error")
-            if self.tool.risk.name != "HIGH":
+            if self.tool.risk.name != "HIGH" and self.tool.allow_always:
                 yield Button("ALWAYS ALLOW THIS SESSION", id="confirm-always", variant="default")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -738,7 +738,7 @@ class JarvisTUI(App):
 
     def _make_confirm(self):
         async def confirm(tool: Tool, args: dict[str, Any]) -> bool:
-            if tool.name in self.auto_allow:
+            if tool.allow_always and tool.name in self.auto_allow:
                 return True
             if self.stop_requested:
                 return False

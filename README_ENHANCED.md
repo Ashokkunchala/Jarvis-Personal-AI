@@ -1,114 +1,128 @@
-# JARVIS Personal AI - Enhanced Edition
+# JARVIS Personal AI - Enhanced Backend
 
-A production-grade, Gemini-powered personal assistant with advanced security, intelligence, and features.
+This document describes the enhanced FastAPI backend (`app.main_enhanced:app`),
+which is the entry point used by `jarvis serve`, the Windows start scripts and
+the Docker image.
 
-## ?? What's New in v0.4.0
+> **Status: local prototype, not production-ready.** Bind the server to
+> `127.0.0.1` and keep it on a trusted machine. There is no public deployment
+> hardening, no distributed quota, and no reliable cross-device delivery
+> guarantee. See `docs/FEATURES.md` and `docs/NEXT-MILESTONES.md` for exact
+> boundaries.
 
-### Security & Authentication
-- **Per-device token management** - Issue, revoke, and track multiple devices
-- **Token hashing** - Secure storage with SHA-256
-- **Centralized auth** - Unified dependency injection
-- **Rate limiting** - Protect against abuse with SlowAPI
-- **Security headers** - XSS, clickjacking, and content-type protection
-- **Audit logging** - Track all authentication events
+## What this backend adds over `app.main`
 
-### Architecture & Reliability
-- **Enhanced configuration** - Pydantic validation with type safety
-- **Gemini service layer** - Retry logic, fallbacks, timeouts
-- **Structured logging** - Better observability
-- **Docker support** - Containerized deployment
-- **Database migrations** - Alembic for schema management
-- **Health checks** - Detailed system status
+- WebSocket brain bridge at `/ws`
+- Master-token device pairing, listing and revocation
+- Detailed authenticated health and performance endpoints
+- Live Voice ticket issuing and bounded concurrent sessions
+- Personal data API: memories, reminders, plans, schedules, workouts, export
+- Research cache endpoint
+- Workout and nutrition coaching endpoints with disclaimers
+- Global per-IP `/api/` rate limiting, a 1 MiB API body cap and security headers
 
-### Features
-- **Snooze reminders** - Postpone reminders on demand
-- **Tags for memories** - Better organization
-- **Research caching** - Faster repeated searches
-- **Enhanced API docs** - Swagger UI at /docs
-- **Metrics ready** - Prometheus integration prepared
+`app.main` remains a smaller compatibility app used by the API tests. It does
+not include `/ws` or device management.
 
-## Quick Start
+## Quick start
 
-### Using Docker (Recommended)
-`ash
-# Copy environment file
+### Docker Compose
+
+```bash
 cp .env.example .env
+# Edit .env: set JARVIS_API_TOKEN (32+ random characters) and one provider key
+docker compose up -d
+# The published port is 127.0.0.1:8000 only.
+```
 
-# Edit .env with your Gemini API key and tokens
-nano .env
+The image runs as an unprivileged user, drops Linux capabilities and mounts only
+`./data`. If `./data` does not exist, create it first so the container user can
+write the SQLite database.
 
-# Start with docker-compose
-docker-compose up -d
+### Python
 
-# Open http://localhost:8000
-`
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+Copy-Item .env.example .env
+# Add keys, then:
+uvicorn app.main_enhanced:app --reload --host 127.0.0.1 --port 8000
+```
 
-### Using Python directly
-`ash
-# Setup
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -r requirements.txt
+Open `http://127.0.0.1:8000` for the browser UI, `/dashboard` for the
+operational dashboard, and `/docs` for the API schema.
 
-# Configure
-cp .env.example .env
-# Edit .env with your keys
+## Authentication
 
-# Run enhanced server
-python run_enhanced.py
-# or
-uvicorn app.main_enhanced:app --reload
-`
+Send `Authorization: Bearer <token>`.
 
-## API Endpoints
+- `JARVIS_API_TOKEN` acts as the master/legacy token.
+- `/api/devices/*` requires the master token.
+- Issued device tokens authenticate normal data and chat routes but cannot
+  administer other devices.
+- If `JARVIS_API_TOKEN` is unset, shorter than 32 characters, or still starts
+  with `replace_`, authenticated routes fail closed with `503`.
 
-### Authentication
-- POST /api/devices/issue - Issue new device token (master token required)
-- GET /api/devices - List devices
-- DELETE /api/devices/{device_id} - Revoke device
+## Endpoints
 
-### Chat
-- POST /api/chat - Standard chat
-- POST /api/chat/stream - Streaming chat (SSE)
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/health` | none | Liveness check |
+| GET | `/api/health/detailed` | token | Database and provider status |
+| GET | `/api/performance` | token | Process and host metrics |
+| GET | `/api/runtime/events` | token | Bounded operational event feed |
+| POST | `/api/chat` | token | Chat completion |
+| POST | `/api/chat/stream` | token | SSE chat stream |
+| POST | `/api/coach/workout` | token | Workout plan plus disclaimer |
+| POST | `/api/coach/nutrition` | token | Nutrition suggestions plus disclaimer |
+| POST | `/api/devices/issue` | master | Issue a device token |
+| GET | `/api/devices` | master | List devices |
+| DELETE | `/api/devices/{device_id}` | master | Revoke a device |
+| POST | `/api/live-voice-ticket` | token | Short-lived Live Voice ticket |
+| GET/POST | `/api/memories` | token | List or create memories |
+| PUT/DELETE | `/api/memories/{memory_id}` | token | Update or delete a memory |
+| GET/POST | `/api/reminders` | token | List or create reminders |
+| GET | `/api/reminders/due` | token | Due reminders |
+| POST | `/api/reminders/{reminder_id}/complete` | token | Complete a reminder |
+| DELETE | `/api/reminders/{reminder_id}` | token | Delete a reminder |
+| GET/POST | `/api/plans` | token | List or create plans |
+| PATCH/DELETE | `/api/plans/{plan_id}` | token | Update or delete a plan |
+| GET | `/api/plans/{plan_id}/history` | token | Plan status history |
+| GET/POST | `/api/schedules` | token | List or create interval schedules |
+| PATCH/DELETE | `/api/schedules/{schedule_id}` | token | Update or delete a schedule |
+| GET | `/api/schedules/{schedule_id}/history` | token | Schedule status history |
+| GET/POST | `/api/workouts` | token | List or record workouts |
+| GET | `/api/workouts/summary` | token | Aggregate workout summary |
+| DELETE | `/api/workouts/{workout_id}` | token | Delete a workout |
+| GET | `/api/export` | token | Export personal data |
+| POST | `/api/research` | token | Cached research query |
+| WS | `/ws` | ticket/token | Realtime brain bridge |
 
-### Personal Data
-- GET/POST/PUT/DELETE /api/memories - Manage memories with tags
-- GET/POST /api/reminders - Manage reminders
-- POST /api/reminders/{id}/complete - Complete reminder
-- POST /api/reminders/{id}/snooze - Snooze reminder
-- GET/POST /api/workouts - Track workouts
-- GET /api/export - Export all data
-
-### Health
-- GET /health - Basic health check
-- GET /api/health/detailed - Detailed system status (auth required)
+There is no reminder snooze endpoint in this backend. `app/personal_data_enhanced.py`
+is unused legacy code and is not part of the running application.
 
 ## Development
 
-`ash
-# Install dev dependencies
-make dev
+```powershell
+python -m pytest -q
+python -m ruff check .
+python -m compileall -q app jarvis windows_agent jarvis_cli.py jarvis_daemon.py run_enhanced.py
+```
 
-# Run tests
-make test
+`ruff` is the merge gate. mypy has a pre-existing error baseline and is
+informational only. The `Makefile` targets are optional and require GNU make;
+run the underlying commands directly on Windows if make is unavailable.
 
-# Linting
-make lint
+The SQLite schema is created with hand-written DDL, so Alembic autogenerate is
+unsupported. Create a revision with `alembic revision -m "description"`, write
+the DDL, then run `alembic upgrade head`.
 
-# Format code
-make format
+## Security notes
 
-# Database migrations
-make migrate msg="description"
-make upgrade
-`
-
-## Security Notes
-- Always use strong random tokens (32+ characters)
-- Keep server bound to localhost in development
-- Use HTTPS in production
-- Rotate tokens regularly
-- Review audit logs
-
-## License
-See LICENSE file for details.
+- Keep `127.0.0.1` binding; do not publish the container port on `0.0.0.0`.
+- Use a random `JARVIS_API_TOKEN` of at least 32 characters.
+- Revoke unused device tokens and review `/api/devices`.
+- Provider keys stay server-side in `.env`; never commit or print them.
+- Rate limiting, body caps and security headers reduce abuse but are not a
+  substitute for a reverse proxy, TLS and authentication when exposed.

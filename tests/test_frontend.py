@@ -1,10 +1,8 @@
-from html.parser import HTMLParser
-from pathlib import Path
-
 import shutil
 import subprocess
 import tempfile
-
+from html.parser import HTMLParser
+from pathlib import Path
 
 HTML_PATH = Path(__file__).parents[1] / "app" / "static" / "index.html"
 
@@ -109,3 +107,12 @@ def test_live_voice_client_script_is_served_by_both_entry_points():
         assert "/api/live-voice" in res.text
         # the ticket endpoint exists (401/503 without a token, not 404)
         assert TestClient(app).post("/api/live-voice-ticket").status_code in (401, 503)
+
+
+def test_external_audio_worklet_javascript_syntax_when_node_is_available():
+    node = shutil.which("node")
+    if not node:
+        return
+    worklet = HTML_PATH.parent / "audio_capture_worklet.js"
+    result = subprocess.run([node, "--check", str(worklet)], text=True, capture_output=True, check=False)
+    assert result.returncode == 0, result.stderr

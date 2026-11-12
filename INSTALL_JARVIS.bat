@@ -4,32 +4,40 @@ echo JARVIS Installation - Iron Man Style
 echo ========================================
 echo.
 
-echo [1/4] Creating virtual environment...
+echo [1/3] Creating virtual environment...
 python -m venv .venv
+if errorlevel 1 goto :error
 call .venv\Scripts\activate
 
-echo [2/4] Installing core dependencies...
-pip install --upgrade pip
-pip install -r requirements.txt
-pip install -r requirements-jarvis.txt
-pip install -r requirements-jarvis-full.txt
+echo [2/3] Installing JARVIS and developer dependencies...
+python -m pip install --upgrade pip
+if errorlevel 1 goto :error
+python -m pip install -e ".[dev]"
+if errorlevel 1 goto :error
 
-echo [3/4] Installing additional packages...
-pip install rich textual typer pyqt6 qasync adbutils
-
-echo [4/4] Downloading wake word models...
-python -c "import openwakeword; openwakeword.utils.download_models()" 2>nul
+echo [3/3] Preparing the local configuration...
+if not exist .env copy .env.example .env >nul
+python -c "from app.core.config import get_settings; get_settings()"
+if errorlevel 1 goto :error
 
 echo.
 echo ========================================
 echo Installation Complete!
 echo ========================================
 echo.
-echo To start JARVIS:
-echo   1. Terminal UI: jarvis tui
-echo   2. Voice Mode: jarvis start
-echo   3. Quick CLI: jarvis --help
+echo Edit .env and set at least one AI provider key plus a random JARVIS_API_TOKEN.
 echo.
-echo Or run: python jarvis_cli.py start
+echo To start JARVIS:
+echo   1. Terminal UI: .\.venv\Scripts\jarvis.exe tui
+echo   2. Local backend: .\.venv\Scripts\jarvis.exe serve
+echo   3. Full voice mode: .\.venv\Scripts\jarvis.exe start
+echo   4. Quick CLI: .\.venv\Scripts\jarvis.exe --help
 echo.
 pause
+exit /b 0
+
+:error
+echo.
+echo Installation failed. Review the error above and retry.
+pause
+exit /b 1

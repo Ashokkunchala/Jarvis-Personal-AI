@@ -32,4 +32,7 @@ pillow>=13.0,<14.0
 pyautogui>=0.9.54,<1.0
 pygetwindow>=0.0.9; sys_platform == "win32"
 keyboard>=0.13.5,<1.0
-SpeechRecognition[audio]>=3.10,<4.0
+SpeechRecognition>=3.10,<4.0
+# PyAudio needs PortAudio build headers; it is only used for Windows microphone
+# capture. The Linux container uses browser audio with Gemini Live instead.
+PyAudio>=0.2.14; sys_platform == "win32"

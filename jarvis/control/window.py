@@ -175,12 +175,20 @@ def get_active_window() -> dict[str, Any]:
     try:
         hwnd = win32gui.GetForegroundWindow()
         _, pid = win32process_get_window_thread_process_id(hwnd)
+        process_name = None
+        try:
+            import psutil
+
+            process_name = psutil.Process(pid).name()
+        except Exception:
+            pass
         return {
             "success": True,
             "title": win32gui.GetWindowText(hwnd),
             "class": win32gui.GetClassName(hwnd),
             "hwnd": hwnd,
             "pid": pid,
+            "process_name": process_name,
         }
     except Exception as exc:
         return {"success": False, "error": str(exc)}
