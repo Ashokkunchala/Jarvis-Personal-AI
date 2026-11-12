@@ -18,7 +18,7 @@ uvicorn app.main_enhanced:app --reload
 ```
 
 `app.main_enhanced` is the canonical backend used by `jarvis serve`, the Windows
-scripts and the Docker image (WebSocket brain bridge, device pairing and health
+scripts (WebSocket brain bridge, device pairing and health
 detail). `app.main` is a smaller compatibility app retained for tests; it does
 not include `/ws` or the device-management endpoints.
 
