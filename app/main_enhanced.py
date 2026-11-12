@@ -29,7 +29,7 @@ from app.middleware.request_size import DEFAULT_API_BODY_LIMIT, RequestBodyLimit
 from app.middleware.security import SecurityHeadersMiddleware
 from app.personal_data import get_memory_context
 from app.personal_data import router as personal_data_router
-from app.personality import SYSTEM_INSTRUCTIONS, language_instruction
+from app.personality import SYSTEM_INSTRUCTIONS, language_instruction, mode_instruction
 from app.scheduler import ScheduleRunner
 from app.schemas import ChatRequest, ChatResponse
 from app.services.gemini_service import gemini_service
@@ -288,7 +288,7 @@ def chat(request: Request, chat_req: ChatRequest, _=Depends(require_api_token)) 
             logger.exception("Could not load saved memories; continuing without memory context")
             memory_instruction = ""
 
-        system_instruction = SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(chat_req.language) + " " + name_instruction
+        system_instruction = SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(chat_req.language) + " " + name_instruction + "\n\n" + mode_instruction(chat_req.mode)
         if memory_instruction:
             system_instruction += "\n\n" + memory_instruction
 
@@ -326,7 +326,7 @@ def chat_stream(request: Request, chat_req: ChatRequest, _=Depends(require_api_t
         logger.exception("Could not load saved memories; continuing without memory context")
         memory_instruction = ""
 
-    system_instruction = SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(chat_req.language) + " " + name_instruction
+    system_instruction = SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(chat_req.language) + " " + name_instruction + "\n\n" + mode_instruction(chat_req.mode)
     if memory_instruction:
         system_instruction += "\n\n" + memory_instruction
     messages = build_openai_messages(system_instruction, chat_req.history, chat_req.message)
