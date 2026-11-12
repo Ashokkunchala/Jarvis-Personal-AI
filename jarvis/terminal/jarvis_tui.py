@@ -1,4 +1,4 @@
-"""JARVIS terminal UI — realtime streaming chat with live tool execution.
+"""JARVIS terminal UI - realtime streaming chat with live tool execution.
 
 Talks straight to the local multi-provider tool loop (no server required), renders
 replies as they stream, shows every tool call as it happens, and asks for
@@ -12,6 +12,7 @@ import json
 import math
 import os
 import shutil
+import sys
 import time
 from datetime import datetime
 from typing import Any
@@ -29,6 +30,78 @@ from jarvis.tools.registry import Tool
 
 MAX_CONVERSATION_WIDGETS = 120
 STREAM_THROTTLE = 0.05  # seconds between markdown re-renders while streaming
+
+
+# ---------------------------------------------------------------------------
+# Glyph rendering: Unicode box art with a plain-ASCII fallback
+# ---------------------------------------------------------------------------
+def _detect_ascii_mode() -> bool:
+    """Plain ASCII when the terminal cannot show Unicode box art.
+
+    Default Windows consoles (legacy code pages such as cp850/cp437) render
+    box-drawing and block glyphs as tofu squares. Set JARVIS_TUI_ASCII=1 to
+    force plain output or JARVIS_TUI_ASCII=0 to force Unicode. For the full
+    cinematic look use Windows Terminal with a Nerd Font - optional polish,
+    never a requirement.
+    """
+    override = os.getenv("JARVIS_TUI_ASCII", "").strip().lower()
+    if override in {"1", "true", "yes", "on"}:
+        return True
+    if override in {"0", "false", "no", "off"}:
+        return False
+    encoding = (getattr(sys.stdout, "encoding", None) or "").lower()
+    if encoding and "utf" not in encoding:
+        return True
+    return False
+
+
+# Mutable on purpose: tests flip it, and every render path reads it per call.
+ascii_mode = _detect_ascii_mode()
+
+_GLYPHS_UNICODE = {
+    "sep": "\u25aa", "dot": "\u25cf", "middot": "\u00b7", "smalldot": "\u2022",
+    "ring": "\u2218", "tiny": "\u2219", "ok": "\u2714", "fail": "\u2718",
+    "cancel": "\u2298", "ellipsis": "\u2026", "dash": "\u2014",
+    "bar_full": "\u2588", "bar_empty": "\u2591", "bar_none": "\u254c",
+    "corner": "\u25e2\u25e4",
+}
+_GLYPHS_ASCII = {
+    "sep": "|", "dot": "O", "middot": "-", "smalldot": ".",
+    "ring": "o", "tiny": ".", "ok": "[+]", "fail": "[x]",
+    "cancel": "[-]", "ellipsis": "...", "dash": "-",
+    "bar_full": "#", "bar_empty": "-", "bar_none": "-",
+    "corner": "><",
+}
+
+
+def glyph(name: str) -> str:
+    """The terminal-safe version of a decorative character."""
+    return (_GLYPHS_ASCII if ascii_mode else _GLYPHS_UNICODE)[name]
+
+
+_ASCII_CSS_OVERRIDES = (
+    "\n    .hud, #core { border: ascii #1c6fa8; }"
+    "\n    #conversation, #tool-log { border: ascii #1c4f86; }"
+    "\n    #topbar { border-bottom: ascii #1c6fa8; }"
+    "\n    #input-bar { border-top: ascii #1c6fa8; }"
+    "\n    Input, Input:focus { border: ascii #1c6fa8; }"
+    "\n    .user-msg { border-left: ascii #38e8a0; }"
+    "\n    .risk-high { border-left: ascii #ff5c6c; }"
+    "\n    .risk-medium { border-left: ascii #ffc35a; }"
+    "\n    .risk-low { border-left: ascii #36d6ff; }"
+    "\n    .risk-safe { border-left: ascii #38e8a0; }"
+    "\n    #confirm-box { border: ascii #ff9f43; }\n"
+)
+
+
+def _detect_voice_first() -> bool:
+    """Voice-first start: JARVIS begins listening as soon as it is ready.
+
+    Default on. Set JARVIS_TUI_VOICE_FIRST=0 (or press STOP) for typed-first.
+    The microphone runs as one-utterance captures chained after each reply -
+    never hidden always-on recording.
+    """
+    return os.getenv("JARVIS_TUI_VOICE_FIRST", "1").strip().lower() not in {"0", "false", "no", "off"}
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +125,7 @@ class ConfirmModal(ModalScreen[bool]):
     #confirm-approve { background: #2ecc71; color: #000; width: 1fr; }
     #confirm-reject { background: #e74c3c; color: #fff; width: 1fr; }
     #confirm-always { background: #34495e; color: #fff; width: 1fr; }
-    """
+    """ + (_ASCII_CSS_OVERRIDES if ascii_mode else "")
 
     BINDINGS = [
         Binding("escape", "reject", "Reject", show=False),
@@ -71,7 +144,7 @@ class ConfirmModal(ModalScreen[bool]):
         with Vertical(id="confirm-box"):
             yield Static("!  CONFIRMATION REQUIRED", id="confirm-title")
             yield Static(f"tool: {self.tool.name}", id="confirm-tool")
-            yield Static(f"risk: {self.tool.risk.name}   ·   {self.tool.description}", id="confirm-risk")
+            yield Static(f"risk: {self.tool.risk.name}   {glyph('middot')}   {self.tool.description}", id="confirm-risk")
             yield Static(pretty, id="confirm-args")
             with Horizontal(classes="confirm-row"):
                 yield Button("APPROVE  (y)", id="confirm-approve", variant="success")
@@ -108,19 +181,19 @@ class ToolEntry(Static):
         if args:
             brief = ", ".join(f"{k}={_brief(v)}" for k, v in list(args.items())[:2])
             label = f"{tool}({brief})"
-        super().__init__(f"… {label}", classes=f"tool-entry risk-{risk.lower()}")
+        super().__init__(f"{glyph('ellipsis')} {label}", classes=f"tool-entry risk-{risk.lower()}")
         self.tool_name = tool
 
     def mark_ok(self, summary: str, elapsed: float) -> None:
-        self.update(Text.from_markup(f"[green]✔[/green] {self.tool_name} [dim]{elapsed:.1f}s[/dim]\n[dim]{_brief(summary, 60)}[/dim]"))
+        self.update(Text.from_markup(f"[green]{glyph('ok')}[/green] {self.tool_name} [dim]{elapsed:.1f}s[/dim]\n[dim]{_brief(summary, 60)}[/dim]"))
         self.add_class("done")
 
     def mark_fail(self, error: str) -> None:
-        self.update(Text.from_markup(f"[red]✘[/red] {self.tool_name}\n[dim red]{_brief(error, 60)}[/dim red]"))
+        self.update(Text.from_markup(f"[red]{glyph('fail')}[/red] {self.tool_name}\n[dim red]{_brief(error, 60)}[/dim red]"))
         self.add_class("failed")
 
     def mark_cancelled(self) -> None:
-        self.update(Text.from_markup(f"[yellow]⊘[/yellow] {self.tool_name} [dim]cancelled[/dim]"))
+        self.update(Text.from_markup(f"[yellow]{glyph('cancel')}[/yellow] {self.tool_name} [dim]cancelled[/dim]"))
         self.add_class("cancelled")
 
 
@@ -133,10 +206,10 @@ class StatusBar(Static):
         volume = data.get("volume") or {}
         android = data.get("android") or {}
 
-        parts = [Text.assemble(("JARVIS", "bold cyan"), (" ▪ ", "dim"))]
+        parts = [Text.assemble(("JARVIS", "bold cyan"), (f" {glyph('sep')} ", "dim"))]
         state = data.get("state", "STARTING")
         colour = {"READY": "green", "THINKING": "yellow", "ERROR": "red"}.get(state, "cyan")
-        parts.append(Text.assemble(("● ", colour), (state, f"bold {colour}"), ("  ", "")))
+        parts.append(Text.assemble((glyph("dot") + " ", colour), (state, f"bold {colour}"), ("  ", "")))
 
         parts.append(Text.assemble((f"{data.get('model', '-')}", "magenta"), ("  ", "")))
         parts.append(Text.assemble((f"tools:{data.get('tools', 0)}", "dim"), ("  ", "")))
@@ -185,7 +258,7 @@ def _heat(value: float) -> str:
 def _brief(value: Any, limit: int = 40) -> str:
     text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
     text = text.replace("\n", " ")
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+    return text if len(text) <= limit else text[: limit - 1] + glyph("ellipsis")
 
 
 
@@ -202,12 +275,12 @@ STATE_STYLE = {
 def _bar(percent: float | None, width: int = 14, invert: bool = False) -> Text:
     """Unicode gauge. None means 'not measured' and is drawn as dashes, never as a value."""
     if percent is None:
-        return Text("╌" * width + "  --", style="dim")
+        return Text(glyph("bar_none") * width + "  --", style="dim")
     pct = max(0.0, min(100.0, float(percent)))
     filled = int(round(pct / 100 * width))
     hot = (100 - pct) if invert else pct
     colour = "#ff5c6c" if hot >= 90 else "#ffc35a" if hot >= 75 else "#38e8a0"
-    return Text.assemble(("█" * filled, colour), ("░" * (width - filled), "#1c4f86"), (f" {pct:3.0f}%", colour))
+    return Text.assemble((glyph("bar_full") * filled, colour), (glyph("bar_empty") * (width - filled), "#1c4f86"), (f" {pct:3.0f}%", colour))
 
 
 def core_lines(frame: int, state: str, simple: bool = False) -> list[Text]:
@@ -217,7 +290,7 @@ def core_lines(frame: int, state: str, simple: bool = False) -> list[Text]:
     """
     colour = STATE_STYLE.get(state, "#36d6ff")
     if simple:
-        return [Text(f"[ JARVIS · {state} ]", style=f"bold {colour}")]
+        return [Text(f"[ JARVIS {glyph('middot')} {state} ]", style=f"bold {colour}")]
     cx, cy = (CORE_W - 1) / 2, (CORE_H - 1) / 2
     rx, ry = 15.0, 5.6
     grid = [[" "] * CORE_W for _ in range(CORE_H)]
@@ -231,9 +304,9 @@ def core_lines(frame: int, state: str, simple: bool = False) -> list[Text]:
         y = int(round(cy + ry * math.sin(a)))
         dist = (head - i) % points
         if dist < 10:
-            ch, st = ("●" if dist == 0 else "•"), colour
+            ch, st = (glyph("dot") if dist == 0 else glyph("smalldot")), colour
         elif i % 2 == 0:
-            ch, st = "·", "#1c6fa8"
+            ch, st = glyph("middot"), "#1c6fa8"
         else:
             continue
         if 0 <= x < CORE_W and 0 <= y < CORE_H:
@@ -245,7 +318,7 @@ def core_lines(frame: int, state: str, simple: bool = False) -> list[Text]:
         x = int(round(cx + rx2 * math.cos(a)))
         y = int(round(cy + ry2 * math.sin(a)))
         if 0 <= x < CORE_W and 0 <= y < CORE_H and grid[y][x] == " ":
-            grid[y][x], style[y][x] = ("∙" if i % 3 else "∘"), "#2f8fd6"
+            grid[y][x], style[y][x] = (glyph("tiny") if i % 3 else glyph("ring")), "#2f8fd6"
     label = "J A R V I S"
     ly = int(cy)
     lx = int(cx - len(label) / 2)
@@ -304,7 +377,7 @@ DEVOPS_PROMPTS = {
 class JarvisTUI(App):
     """Realtime JARVIS terminal UI."""
 
-    TITLE = "JARVIS · Personal AI"
+    TITLE = f"JARVIS {glyph('middot')} Personal AI"
     SUB_TITLE = "laptop + android control"
 
     CSS = """
@@ -343,7 +416,9 @@ class JarvisTUI(App):
     .compact #left, .compact #sidebar { display: none; }
     .short #core { display: none; }
     .simple #core { display: none; }
-    """
+    .voice-first #cmd, .voice-first #send-btn { display: none; }
+    #type-btn { width: 10; }
+    """ + (_ASCII_CSS_OVERRIDES if ascii_mode else "")
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
@@ -383,6 +458,8 @@ class JarvisTUI(App):
         self.last_reply = ""
         self.turn_started = 0.0
         self.mic_worker = None
+        self.voice_mode = _detect_voice_first()
+        self._voice_loop = self.voice_mode
 
     # ------------------------------------------------------------- lifecycle
     def compose(self) -> ComposeResult:
@@ -401,18 +478,22 @@ class JarvisTUI(App):
                 yield VerticalScroll(id="tool-log")
         with Vertical(id="foot"):
             with Horizontal(id="input-bar"):
-                yield Input(placeholder="Ask JARVIS…   /help for commands", id="cmd", suggester=None)
+                yield Input(placeholder=f"Ask JARVIS{glyph('ellipsis')}   /help for commands", id="cmd", suggester=None)
                 yield Button("MIC", id="mic-btn", variant="success")
                 yield Button("STOP", id="stop-btn", variant="error")
                 yield Button("SEND", id="send-btn", variant="primary")
-            yield Static("Enter send · F1 help · F2 input · F3 panels · F4 stop · Ctrl+L clear · Ctrl+Q quit", id="hint")
+                yield Button("TYPE", id="type-btn", variant="default")
+            yield Static(f"Enter send {glyph('middot')} F1 help {glyph('middot')} F2 input {glyph('middot')} F3 panels {glyph('middot')} F4 stop {glyph('middot')} Ctrl+L clear {glyph('middot')} Ctrl+Q quit", id="hint")
 
     async def on_mount(self) -> None:
         if self.brain is None:
             self.brain = JarvisBrain()
         self.query_one("#stop-btn", Button).disabled = True
         self.query_one("#mic-btn", Button).disabled = False
-        self.query_one("#cmd", Input).focus()
+        if self.voice_mode:
+            self.set_class(True, "voice-first")
+        else:
+            self.query_one("#cmd", Input).focus()
         self.set_interval(2.0, self.refresh_status)
         self.set_interval(0.12 if not self.simple else 1.0, self._tick)
         self.query_one("#conversation").border_title = "CONVERSATION"
@@ -426,15 +507,20 @@ class JarvisTUI(App):
         self._render_static_panels()
         self.refresh_status()
 
-        self._sys("JARVIS online — direct AI tool loop (Gemini/OpenRouter/Groq), no server required.")
+        self._sys(f"JARVIS online {glyph('dash')} direct AI tool loop (Gemini/OpenRouter/Groq), no server required.")
         if not self.brain.configured:
             self._sys("[red]No AI provider key.[/red] Set GEMINI_API_KEY, OPENROUTER_API_KEY, or "
                       "GROQ_API_KEY in .env (see .env.example), then restart.")
         else:
             providers = ", ".join(self.brain.provider_candidates())
-            self._sys(f"providers [magenta]{providers}[/magenta] · model [magenta]{self.brain.active_model}[/magenta] · "
-                      f"[cyan]{len(self.brain.registry)} tools[/cyan] · type /tools to inspect")
-        self._sys("Ask anything, or try: “set volume to 20”, “open chrome and screenshot”, “battery status”.")
+            self._sys(f"providers [magenta]{providers}[/magenta] {glyph('middot')} model [magenta]{self.brain.active_model}[/magenta] {glyph('middot')} "
+                      f"[cyan]{len(self.brain.registry)} tools[/cyan] {glyph('middot')} type /tools to inspect")
+        self._sys("Ask anything, or try: 'set volume to 20', 'open chrome and screenshot', 'battery status'.")
+        if self.voice_mode:
+            self._sys(f"[cyan]Voice mode:[/cyan] JARVIS listens one utterance at a time, answers, then listens "
+                      f"again. Press STOP to pause voice; TYPE or F2 reveals the input box. Speech uses the "
+                      f"SpeechRecognition online service {glyph('dash')} no offline wake word yet.")
+            self.call_later(self._start_mic_capture)
 
     # ---------------------------------------------------------- layout/panels
     def on_resize(self, event: Any) -> None:
@@ -445,8 +531,8 @@ class JarvisTUI(App):
         self.set_class(height < 32, "short")
         self.set_class(self.simple, "simple")
         self.query_one("#hint", Static).update(
-            "Enter send · F1 help · F3 panels · F4 stop · Ctrl+Q quit" if width < 90 else
-            "Enter send · F1 help · F2 input · F3 panels · F4 stop · Ctrl+L clear · Ctrl+Q quit")
+            f"Enter send {glyph('middot')} F1 help {glyph('middot')} F3 panels {glyph('middot')} F4 stop {glyph('middot')} Ctrl+Q quit" if width < 90 else
+            f"Enter send {glyph('middot')} F1 help {glyph('middot')} F2 input {glyph('middot')} F3 panels {glyph('middot')} F4 stop {glyph('middot')} Ctrl+L clear {glyph('middot')} Ctrl+Q quit")
 
     def _tick(self) -> None:
         try:
@@ -462,8 +548,8 @@ class JarvisTUI(App):
         state = getattr(self.query_one("#core", CoreWidget), "state", "STARTING")
         colour = STATE_STYLE.get(state, "#36d6ff")
         return Text.assemble(
-            ("◢◤ ", "#36d6ff"), ("JARVIS", "bold #e4f3ff"), (" · COMMAND CENTRE", "#36d6ff"),
-            ("    ● ", colour), (state, f"bold {colour}"),
+            (glyph("corner") + " ", "#36d6ff"), ("JARVIS", "bold #e4f3ff"), (f" {glyph('middot')} COMMAND CENTRE", "#36d6ff"),
+            ("    " + glyph("dot") + " ", colour), (state, f"bold {colour}"),
             ("    " + datetime.now().strftime("%a %d %b  %H:%M:%S"), "#86a7c8"),
         )
 
@@ -472,7 +558,7 @@ class JarvisTUI(App):
         rows = Text()
         for name in ("aws", "terraform", "kubectl", "docker"):
             ok = _tool_present(name)
-            rows.append("✔ " if ok else "✘ ", style="#38e8a0" if ok else "#5b7a99")
+            rows.append((glyph("ok") if ok else glyph("fail")) + " ", style="#38e8a0" if ok else "#5b7a99")
             rows.append(f"{name:<10}", style="#e4f3ff" if ok else "#5b7a99")
             rows.append("on PATH\n" if ok else "not found\n", style="dim")
         rows.append("AWS access: read-only tools,\nchanges always ask. Not\nchecked from this panel.\n", style="dim")
@@ -485,7 +571,7 @@ class JarvisTUI(App):
         if self.pending_tool:
             text.append("! Approval waiting\n", style="bold #ff9f43")
             text.append(f"{self.pending_tool}\n", style="#e4f3ff")
-            text.append("y approve · n reject", style="dim")
+            text.append(f"y approve {glyph('middot')} n reject", style="dim")
         else:
             text.append("Nothing waiting for you.", style="dim")
         self.query_one("#needs", Static).update(text)
@@ -555,7 +641,7 @@ class JarvisTUI(App):
         v.append("connected" if android.get("connected") else "not connected",
                  style="#38e8a0" if android.get("connected") else "#5b7a99")
         v.append("\nvoice        ", style="dim")
-        v.append("MIC button", style="#86a7c8")
+        v.append("listening loop (online speech)" if self.voice_mode else "MIC button (online speech)", style="#86a7c8")
         v.append("\nhistory      ", style="dim")
         v.append(f"{len(self.brain.history)} msgs", style="#86a7c8")
         self.query_one("#services", Static).update(v)
@@ -566,18 +652,25 @@ class JarvisTUI(App):
             await self._submit()
         elif event.button.id == "mic-btn":
             self._start_mic_capture()
+        elif event.button.id == "type-btn":
+            self.action_focus_input()
         elif event.button.id == "stop-btn":
+            if self.voice_mode:
+                self.voice_mode = False
+                self._voice_loop = False
+                self._sys("[cyan]Voice mode paused. Press MIC to talk again, or /voice to resume the loop.[/cyan]")
             self.stop_requested = True
-            self._sys("[yellow]stopping after current step…[/yellow]")
+            self._sys(f"[yellow]stopping after current step{glyph('ellipsis')}[/yellow]")
 
-    def _start_mic_capture(self) -> None:
+    def _start_mic_capture(self, quiet: bool = False) -> None:
         """Capture one user-requested utterance without blocking the Textual UI."""
         if self.busy or (self.mic_worker is not None and self.mic_worker.is_running):
-            self._sys("[yellow]JARVIS is busy or the microphone is already active.[/yellow]")
+            if not quiet:
+                self._sys("[yellow]JARVIS is busy or the microphone is already active.[/yellow]")
             return
         self.query_one("#mic-btn", Button).disabled = True
         self._set_status("LISTENING")
-        self._sys("[cyan]MIC active — speak after the prompt. One utterance only; click MIC again for another.[/cyan]")
+        self._sys(f"[cyan]MIC active {glyph('dash')} speak after the prompt. One utterance only; click MIC again for another.[/cyan]")
         self.mic_worker = self._capture_and_transcribe()
 
     @work(thread=True, exclusive=True, group="mic")
@@ -587,8 +680,7 @@ class JarvisTUI(App):
             import speech_recognition as sr
         except ImportError:
             self.call_from_thread(
-                self._mic_finished,
-                None,
+                self._mic_unavailable,
                 "Microphone support is not installed. Run: pip install 'SpeechRecognition[audio]'",
             )
             return
@@ -596,7 +688,7 @@ class JarvisTUI(App):
             recognizer = sr.Recognizer()
             with sr.Microphone() as source:
                 recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                self.call_from_thread(self._sys, "[cyan]Listening now…[/cyan]")
+                self.call_from_thread(self._sys, f"[cyan]Listening now{glyph('ellipsis')}[/cyan]")
                 audio = recognizer.listen(source, timeout=8, phrase_time_limit=15)
             self.call_from_thread(self._set_status, "TRANSCRIBING")
             transcript = recognizer.recognize_google(audio, language="en-IN")
@@ -610,11 +702,26 @@ class JarvisTUI(App):
         except Exception as exc:
             self.call_from_thread(self._mic_finished, None, f"Microphone error: {_brief(str(exc), 120)}")
 
+    def _mic_unavailable(self, error: str) -> None:
+        """Mic stack missing: drop out of voice mode instead of looping errors."""
+        self.voice_mode = False
+        self._voice_loop = False
+        self.query_one("#mic-btn", Button).disabled = False
+        self._set_status("READY")
+        self._sys(f"[red]MIC:[/red] {error}")
+        self._sys("Voice mode off. Type below, or install microphone support and press MIC.")
+
     def _mic_finished(self, transcript: str | None, error: str | None) -> None:
         self.query_one("#mic-btn", Button).disabled = False
         self._set_status("READY")
         if error:
+            # In the listening loop, silence or unclear audio just listens again.
+            if self.voice_mode and ("No speech detected" in error or "not clear enough" in error):
+                self.call_later(self._start_mic_capture, True)
+                return
             self._sys(f"[red]MIC:[/red] {error}")
+            if self.voice_mode:
+                self.call_later(self._start_mic_capture, True)
             return
         if transcript:
             self._sys(f"[dim]heard: {_brief(transcript, 180)}[/dim]")
@@ -669,6 +776,16 @@ class JarvisTUI(App):
                 self._sys("usage: /run <command>")
                 return
             await self._run_turn(f"Run this shell command and report the output: {arg}")
+        elif cmd == "/voice":
+            if arg.lower() in {"off", "0", "stop"}:
+                self.voice_mode = False
+                self._voice_loop = False
+                self._sys("voice loop off; press MIC for a single utterance or /voice to resume")
+            else:
+                self.voice_mode = True
+                self._voice_loop = True
+                self._sys("voice loop on; JARVIS listens again after every reply")
+                self._start_mic_capture(quiet=True)
         elif cmd == "/allow":
             if arg:
                 self.auto_allow.add(arg)
@@ -676,13 +793,13 @@ class JarvisTUI(App):
             else:
                 self._sys("auto-allow: " + (", ".join(sorted(self.auto_allow)) or "none"))
         else:
-            self._sys(f"unknown command {cmd} — try /help")
+            self._sys(f"unknown command {cmd} {glyph('dash')} try /help")
 
     def _help(self) -> None:
         self._sys(
-            "[bold]Commands[/bold]  /help /clear /status /tools /model <name> /history /run <cmd> "
+            "[bold]Commands[/bold]  /help /clear /status /tools /model <name> /history /run <cmd> /voice [on|off] "
             "/allow <tool> /quit\n"
-            "[bold]Shortcuts[/bold]  Enter send · MIC one-shot speech input · Ctrl+L clear · Ctrl+T sidebar · F1 help · Ctrl+Q quit\n"
+            f"[bold]Shortcuts[/bold]  Enter send {glyph('middot')} /voice on|off {glyph('middot')} F2 type {glyph('middot')} Ctrl+L clear {glyph('middot')} Ctrl+T sidebar {glyph('middot')} F1 help {glyph('middot')} Ctrl+Q quit\n"
             "[bold]Risky actions[/bold]  always ask first; /allow <tool> pre-approves one tool."
         )
 
@@ -726,14 +843,14 @@ class JarvisTUI(App):
                     self._finish_stream(event)
                     self.last_reply = event.get("text", "")
                     if event.get("tools_used"):
-                        self._sys(f"[dim]used {len(event['tools_used'])} tool(s) · "
+                        self._sys(f"[dim]used {len(event['tools_used'])} tool(s) {glyph('middot')} "
                                   f"{event.get('elapsed', 0)}s[/dim]")
                 elif event["type"] == "error":
                     error = event["error"]
                     self._abort_stream()
                     self._sys(f"[red]error:[/red] {error}")
                 if self.stop_requested and event["type"] == "tool_start":
-                    self._sys("[yellow]stop requested — no further tools will run this turn[/yellow]")
+                    self._sys(f"[yellow]stop requested {glyph('dash')} no further tools will run this turn[/yellow]")
         except Exception as exc:  # pragma: no cover - defensive
             self._abort_stream()
             self._sys(f"[red]crash:[/red] {_brief(str(exc), 160)}")
@@ -743,7 +860,10 @@ class JarvisTUI(App):
             self.query_one("#send-btn", Button).disabled = False
             self.query_one("#stop-btn", Button).disabled = True
             self._set_status("READY" if not error else "ERROR")
-            self.query_one("#cmd", Input).focus()
+            if self.voice_mode:
+                self.call_later(self._start_mic_capture, True)
+            else:
+                self.query_one("#cmd", Input).focus()
 
     def _make_confirm(self):
         async def confirm(tool: Tool, args: dict[str, Any]) -> bool:
@@ -829,7 +949,7 @@ class JarvisTUI(App):
         log.mount(entry)
         log.scroll_end(animate=False)
         if self.stop_requested:
-            self._sys("[yellow]stopping…[/yellow]")
+            self._sys(f"[yellow]stopping{glyph('ellipsis')}[/yellow]")
 
     def _tool_end(self, event: dict[str, Any], ok: bool | None) -> None:
         log = self.query_one("#tool-log", VerticalScroll)
@@ -874,6 +994,7 @@ class JarvisTUI(App):
         self._help()
 
     def action_focus_input(self) -> None:
+        self.set_class(False, "voice-first")
         self.query_one("#cmd", Input).focus()
 
     def action_toggle_sidebar(self) -> None:
@@ -883,7 +1004,7 @@ class JarvisTUI(App):
     def action_stop_turn(self) -> None:
         if self.busy:
             self.stop_requested = True
-            self._sys("[yellow]stopping after current step…[/yellow]")
+            self._sys(f"[yellow]stopping after current step{glyph('ellipsis')}[/yellow]")
 
     def action_copy_last(self) -> None:
         if self.last_reply:
@@ -901,6 +1022,8 @@ def _timestamp() -> str:
 
 
 def main() -> None:
+    if "--no-voice" in sys.argv or "--type" in sys.argv:
+        os.environ["JARVIS_TUI_VOICE_FIRST"] = "0"
     JarvisTUI().run()
 
 
