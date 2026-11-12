@@ -1,0 +1,209 @@
+"""Personal life store: quick notes, expenses and habit streaks.
+
+Local SQLite only (``~/.jarvis/personal.db`` by default). Nothing leaves the
+machine. Amounts are plain numbers in the user's own currency (rupees by
+default in summaries); JARVIS never moves money, it only records what the user
+tells it.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+MAX_TEXT_CHARS = 1000
+MAX_AMOUNT = 100_000_000
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    amount REAL NOT NULL,
+    category TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    spent_on TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS habit_logs (
+    habit TEXT NOT NULL,
+    day TEXT NOT NULL,
+    PRIMARY KEY (habit, day)
+);
+"""
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _clean(text: str, field: str, required: bool = True) -> str:
+    text = (text or "").strip()
+    if required and not text:
+        raise ValueError(f"{field} is required.")
+    if len(text) > MAX_TEXT_CHARS:
+        raise ValueError(f"Keep {field} to {MAX_TEXT_CHARS} characters or fewer.")
+    return text
+
+
+def _parse_day(value: str | None) -> date:
+    if not value:
+        return date.today()
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError("Dates must look like 2026-11-13.") from exc
+
+
+class PersonalStore:
+    def __init__(self, path: Path | str | None = None):
+        self.path = str(path or (Path.home() / ".jarvis" / "personal.db"))
+        if self.path != ":memory:":
+            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as db:
+            db.executescript(_SCHEMA)
+
+    def _connect(self) -> sqlite3.Connection:
+        db = sqlite3.connect(self.path)
+        db.row_factory = sqlite3.Row
+        return db
+
+    # ------------------------------------------------------------------ notes
+    def add_note(self, text: str, tags: str = "") -> dict[str, Any]:
+        text = _clean(text, "Note text")
+        tags = ",".join(t.strip().lower() for t in _clean(tags, "Tags", False).split(",") if t.strip())
+        with self._connect() as db:
+            cur = db.execute("INSERT INTO notes (text, tags, created_at) VALUES (?, ?, ?)", (text, tags, _now()))
+            row = db.execute("SELECT * FROM notes WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+    def search_notes(self, query: str = "", limit: int = 20) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 100))
+        like = f"%{query.strip().lower()}%"
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM notes WHERE lower(text) LIKE ? OR tags LIKE ? ORDER BY id DESC LIMIT ?",
+                (like, like, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # --------------------------------------------------------------- expenses
+    def add_expense(self, amount: float, category: str, note: str = "", spent_on: str | None = None) -> dict[str, Any]:
+        try:
+            amount = round(float(amount), 2)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Amount must be a number.") from exc
+        if amount <= 0 or amount > MAX_AMOUNT:
+            raise ValueError("Amount must be above zero and below 100,000,000.")
+        category = _clean(category, "Category").lower()
+        note = _clean(note, "Note", False)
+        day = _parse_day(spent_on).isoformat()
+        with self._connect() as db:
+            cur = db.execute(
+                "INSERT INTO expenses (amount, category, note, spent_on, created_at) VALUES (?, ?, ?, ?, ?)",
+                (amount, category, note, day, _now()),
+            )
+            row = db.execute("SELECT * FROM expenses WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+    def expense_summary(self, month: str | None = None) -> dict[str, Any]:
+        """Totals by category for a month given as YYYY-MM (default: this month)."""
+        month = (month or date.today().strftime("%Y-%m")).strip()
+        try:
+            datetime.strptime(month, "%Y-%m")
+        except ValueError as exc:
+            raise ValueError("Month must look like 2026-11.") from exc
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT category, ROUND(SUM(amount), 2) AS total, COUNT(*) AS n FROM expenses "
+                "WHERE substr(spent_on, 1, 7) = ? GROUP BY category ORDER BY total DESC",
+                (month,),
+            ).fetchall()
+        by_category = [dict(r) for r in rows]
+        return {
+            "month": month,
+            "total": round(sum(r["total"] for r in by_category), 2),
+            "count": sum(r["n"] for r in by_category),
+            "by_category": by_category,
+        }
+
+    # ----------------------------------------------------------------- habits
+    def log_habit(self, habit: str, day: str | None = None) -> dict[str, Any]:
+        habit = _clean(habit, "Habit").lower()
+        d = _parse_day(day)
+        if d > date.today():
+            raise ValueError("Cannot log a habit for a future day.")
+        with self._connect() as db:
+            db.execute("INSERT OR IGNORE INTO habit_logs (habit, day) VALUES (?, ?)", (habit, d.isoformat()))
+        return {"habit": habit, "day": d.isoformat(), **self.streak(habit)}
+
+    def streak(self, habit: str) -> dict[str, Any]:
+        """Current streak: consecutive days ending today, or yesterday if today is not logged yet."""
+        habit = habit.strip().lower()
+        with self._connect() as db:
+            days = {r["day"] for r in db.execute("SELECT day FROM habit_logs WHERE habit = ?", (habit,))}
+        today = date.today()
+        cursor = today if today.isoformat() in days else today - timedelta(days=1)
+        current = 0
+        while cursor.isoformat() in days:
+            current += 1
+            cursor -= timedelta(days=1)
+        best = run = 0
+        previous: date | None = None
+        for d in sorted(date.fromisoformat(x) for x in days):
+            run = run + 1 if previous and (d - previous).days == 1 else 1
+            best = max(best, run)
+            previous = d
+        return {"current_streak": current, "best_streak": best, "done_today": today.isoformat() in days, "total_days": len(days)}
+
+    def habits(self) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            names = [r["habit"] for r in db.execute("SELECT DISTINCT habit FROM habit_logs ORDER BY habit")]
+        return [{"habit": n, **self.streak(n)} for n in names]
+
+    # --------------------------------------------------------------- briefing
+    def briefing(self, open_commitments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """One-screen summary for 'what is my day look like'. Commitments come from the ownership store."""
+        commitments = open_commitments or []
+        habits = self.habits()
+        today_spend = 0.0
+        with self._connect() as db:
+            row = db.execute("SELECT COALESCE(SUM(amount), 0) AS t FROM expenses WHERE spent_on = ?", (date.today().isoformat(),)).fetchone()
+            today_spend = round(row["t"], 2)
+        lines = []
+        overdue = [c for c in commitments if c.get("overdue")]
+        if overdue:
+            lines.append(f"{len(overdue)} overdue: " + "; ".join(c["text"] for c in overdue[:3]))
+        if commitments:
+            lines.append(f"{len(commitments)} open commitment(s).")
+        pending = [h["habit"] for h in habits if not h["done_today"]]
+        if pending:
+            lines.append("Habits not done yet today: " + ", ".join(pending) + ".")
+        lines.append(f"Spent today: {today_spend:g}.")
+        month = self.expense_summary()
+        lines.append(f"Spent this month: {month['total']:g}.")
+        return {
+            "date": date.today().isoformat(),
+            "overdue_commitments": len(overdue),
+            "open_commitments": len(commitments),
+            "habits_pending": pending,
+            "spent_today": today_spend,
+            "spent_this_month": month["total"],
+            "summary": " ".join(lines),
+        }
+
+
+_default: PersonalStore | None = None
+
+
+def default_store() -> PersonalStore:
+    global _default
+    if _default is None:
+        _default = PersonalStore()
+    return _default
