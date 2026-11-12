@@ -37,7 +37,7 @@ from app.middleware.request_size import DEFAULT_API_BODY_LIMIT, RequestBodyLimit
 from app.middleware.security import SecurityHeadersMiddleware
 from app.personal_data import get_memory_context, require_device_token
 from app.personal_data import router as personal_data_router
-from app.personality import SYSTEM_INSTRUCTIONS, language_instruction
+from app.personality import SYSTEM_INSTRUCTIONS, language_instruction, mode_instruction
 from app.scheduler import ScheduleRunner
 from app.schemas import ChatRequest, ChatResponse
 from jarvis.telemetry import runtime_events
@@ -137,7 +137,7 @@ def chat(request: ChatRequest, authorization: str | None = Header(default=None))
         except Exception:
             logger.exception("Could not load saved memories; continuing without memory context")
             memory_instruction = ""
-        system_instruction = SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(request.language) + " " + name_instruction
+        system_instruction = SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(request.language) + " " + name_instruction + "\n\n" + mode_instruction(request.mode)
         if memory_instruction:
             system_instruction += "\n\n" + memory_instruction
         messages = build_openai_messages(system_instruction, request.history, request.message)
@@ -170,7 +170,7 @@ def chat_stream(request: ChatRequest, authorization: str | None = Header(default
     except Exception:
         logger.exception("Could not load saved memories; continuing without memory context")
         memory_instruction = ""
-    system_instruction = SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(request.language) + " " + name_instruction
+    system_instruction = SYSTEM_INSTRUCTIONS + "\n\n" + language_instruction(request.language) + " " + name_instruction + "\n\n" + mode_instruction(request.mode)
     if memory_instruction:
         system_instruction += "\n\n" + memory_instruction
     messages = build_openai_messages(system_instruction, request.history, request.message)
