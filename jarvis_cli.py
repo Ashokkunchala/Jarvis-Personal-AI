@@ -12,6 +12,7 @@ Three tiers of entry:
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
 import secrets
@@ -420,6 +421,22 @@ def start():
     if not config.gemini_api_key.strip():
         err_console.print(
             "[red]GEMINI_API_KEY is not set[/red] — add it to .env, then run 'jarvis start' again."
+        )
+        raise typer.Exit(code=1)
+
+    missing = [
+        package
+        for package in ("sounddevice", "webrtcvad", "openwakeword", "numpy", "scipy")
+        if importlib.util.find_spec(package) is None
+    ]
+    if missing:
+        err_console.print(
+            "[red]Voice stack is not installed[/red] — missing: "
+            + ", ".join(missing)
+            + ".\nThe wake word, microphone loop and VAD run locally and need these packages. "
+            "Install them with: [bold]pip install -r requirements-jarvis.txt[/bold] "
+            "(PyAudio needs PortAudio build headers on Linux). The typed 'jarvis ask' "
+            "and 'jarvis tui' modes work without them."
         )
         raise typer.Exit(code=1)
 
