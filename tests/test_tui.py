@@ -138,3 +138,77 @@ def test_tui_module_imports_cleanly() -> None:
 
     assert hasattr(module, "JarvisTUI")
     assert hasattr(module, "ConfirmModal")
+
+
+# ---------------------------------------------------------------------------
+# Cinematic command-centre layout
+# ---------------------------------------------------------------------------
+def test_core_lines_are_a_pure_function_of_frame_and_state() -> None:
+    from jarvis.terminal.jarvis_tui import CORE_H, CORE_W, core_lines
+
+    a = [t.plain for t in core_lines(3, "READY")]
+    assert a == [t.plain for t in core_lines(3, "READY")]
+    assert len(a) == CORE_H and all(len(row) == CORE_W for row in a)
+    assert any("J A R V I S" in row for row in a)
+    assert a != [t.plain for t in core_lines(9, "THINKING")]
+    plain = core_lines(0, "ERROR", simple=True)
+    assert len(plain) == 1 and "ERROR" in plain[0].plain
+
+
+def test_bar_never_invents_a_value() -> None:
+    from jarvis.terminal.jarvis_tui import _bar
+
+    assert "--" in _bar(None).plain
+    assert "50%" in _bar(50).plain
+    assert "100%" in _bar(400).plain
+
+
+async def test_panels_show_real_state_and_pending_approval() -> None:
+    import asyncio
+
+    from textual.widgets import Static
+
+    app = JarvisTUI(brain=StubBrain(), simple=True)
+    async with app.run_test(size=(150, 42)) as pilot:
+        await pilot.pause(0.4)
+        assert "Nothing waiting" in str(app.query_one("#needs", Static).render())
+        tool = app.brain.registry.get("battery_status")
+        fut = asyncio.get_running_loop().create_future()
+        app._show_confirm(tool, {}, fut)
+        await pilot.pause(0.3)
+        assert app.pending_tool == "battery_status"
+        await pilot.press("n")
+        await pilot.pause(0.3)
+        assert fut.result() is False  # rejection is the fail-closed outcome
+        assert app.pending_tool is None
+
+
+async def test_layout_degrades_on_small_terminals() -> None:
+    app = JarvisTUI(brain=StubBrain(), simple=True)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause(0.3)
+        assert app.has_class("compact") and app.has_class("short")
+        assert app.query_one("#sidebar").display is False
+        assert app.query_one("#cmd").display is True
+
+
+def test_no_color_env_selects_plain_greyscale_mode(monkeypatch) -> None:
+    from textual.filter import Monochrome
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    app = JarvisTUI(brain=StubBrain())
+    assert app.simple is True
+    assert any(isinstance(f, Monochrome) for f in app._filters)
+    monkeypatch.delenv("NO_COLOR")
+    monkeypatch.setenv("JARVIS_TUI_SIMPLE", "1")
+    assert any(isinstance(f, Monochrome) for f in JarvisTUI(brain=StubBrain())._filters)
+
+
+def test_terminal_source_has_no_emoji_glyphs() -> None:
+    import pathlib
+
+    import jarvis.terminal.jarvis_tui as module
+
+    text = pathlib.Path(module.__file__).read_text(encoding="utf-8")
+    assert not [c for c in text if ord(c) > 0x1F000]
+    assert "\u26a0" not in text

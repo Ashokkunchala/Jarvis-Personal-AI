@@ -39,6 +39,7 @@ class Tool:
     category: str = "general"
     requires_confirmation: bool = False
     requires_device: bool = False
+    never_auto_approve: bool = False
     examples: list[str] = field(default_factory=list)
     confirmation_preview: Callable[..., Any] | None = None
     allow_always: bool = True
@@ -208,12 +209,22 @@ class ToolRegistry:
 
         emit({"type": "tool_start", "tool": name, "args": args, "risk": tool.risk.name, "category": tool.category})
 
+        if tool.never_auto_approve:
+            auto_approve = False  # cloud-changing tools always need an explicit yes
         confirmation_args = args
         if tool.confirm_required and (not auto_approve or not tool.allow_auto_approve):
             if confirm is None:
-                error = "User confirmation is required, but no confirmation handler is available."
-                emit({"type": "tool_error", "tool": name, "error": error})
-                return ToolResult(name, False, error=error, elapsed=time.time() - started)
+                # Fail closed: a tool that needs approval never runs without
+                # a way to ask the user.
+                logger.warning("Tool %s needs confirmation but no confirm callback was supplied", name)
+                emit({"type": "tool_cancelled", "tool": name})
+                return ToolResult(
+                    name,
+                    False,
+                    error="Confirmation required but no confirmation handler is available.",
+                    elapsed=time.time() - started,
+                    cancelled=True,
+                )
             if tool.confirmation_preview is not None:
                 try:
                     preview = await _invoke(tool.confirmation_preview, args)

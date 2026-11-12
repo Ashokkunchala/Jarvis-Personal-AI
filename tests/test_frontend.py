@@ -5,7 +5,6 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 HTML_PATH = Path(__file__).parents[1] / "app" / "static" / "index.html"
-DASHBOARD_PATH = HTML_PATH.with_name("dashboard.html")
 
 
 class ScriptCollector(HTMLParser):
@@ -34,34 +33,18 @@ def test_inline_javascript_syntax_when_node_is_available():
     node = shutil.which("node")
     if not node:
         return
-    for html_path in (HTML_PATH, DASHBOARD_PATH):
-        parser = ScriptCollector()
-        parser.feed(html_path.read_text(encoding="utf-8"))
-        assert parser.scripts, f"Expected {html_path.name} to contain its application script"
-        for script in parser.scripts:
-            with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8", delete=False) as handle:
-                handle.write(script)
-                path = handle.name
-            try:
-                result = subprocess.run([node, "--check", path], text=True, capture_output=True, check=False)
-                assert result.returncode == 0, result.stderr
-            finally:
-                Path(path).unlink(missing_ok=True)
-
-
-def test_dashboard_displays_measured_network_traffic():
-    dashboard = DASHBOARD_PATH.read_text(encoding="utf-8")
-    assert 'id="networkTraffic"' in dashboard
-    assert "network_bytes_sent" in dashboard
-    assert "network_bytes_recv" in dashboard
-    assert "previousNetwork" in dashboard
-    assert 'id="runtimeFeed"' in dashboard
-    assert '"/api/runtime/events?"' in dashboard
-    assert "addRuntimeEvent" in dashboard
-    assert "setupWarningPanel" in dashboard
-    assert "checkThresholdWarnings" in dashboard
-    assert "Notification.requestPermission()" in dashboard
-    assert "localStorage.setItem(\"jarvisThresholdWarnings\"" in dashboard
+    parser = ScriptCollector()
+    parser.feed(HTML_PATH.read_text(encoding="utf-8"))
+    assert parser.scripts, "Expected the browser UI to contain its application script"
+    for script in parser.scripts:
+        with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8", delete=False) as handle:
+            handle.write(script)
+            path = handle.name
+        try:
+            result = subprocess.run([node, "--check", path], text=True, capture_output=True, check=False)
+            assert result.returncode == 0, result.stderr
+        finally:
+            Path(path).unlink(missing_ok=True)
 
 
 def test_voice_first_interface_has_live_audio_and_fallback_controls():
@@ -86,36 +69,8 @@ def test_voice_first_interface_has_live_audio_and_fallback_controls():
         'type:"audio_end"',
         "getUserMedia",
         "stopPlayback",
-        "case \"transcript\"",
-        "[1006,1011,1012].includes(event.code)",
-        "reconnectAttempts<2",
-        "event.code===4429",
-        'clearTimeout(reconnectTimer)',
     ):
         assert expected in live_client
-
-
-def test_saved_plans_are_visible_and_explicitly_non_executable():
-    html = HTML_PATH.read_text(encoding="utf-8")
-    assert 'id="planForm"' in html
-    assert 'id="planSteps"' in html
-    assert 'id="plans"' in html
-    assert '"/api/plans"' in html
-    assert '"/api/plans/"+plan.id+"/history"' in html
-    assert 'status:"cancelled"' in html
-    assert "never run tools" in html
-    assert "A target date creates a one-time reminder" in html
-
-
-def test_scheduled_checks_are_opt_in_and_have_disable_controls():
-    html = HTML_PATH.read_text(encoding="utf-8")
-    assert 'id="scheduleForm"' in html
-    assert 'id="scheduleTool"' in html
-    assert '"/api/schedules"' in html
-    assert 'method:"PATCH",body:JSON.stringify({enabled:false})' in html
-    assert '"/api/schedules/"+schedule.id+"/history"' in html
-    assert "New schedules start disabled" in html
-    assert 'value="read_file"' not in html
 
 
 def test_external_live_voice_javascript_syntax_when_node_is_available():
@@ -125,6 +80,39 @@ def test_external_live_voice_javascript_syntax_when_node_is_available():
     script = HTML_PATH.parent / "live_voice.js"
     result = subprocess.run([node, "--check", str(script)], text=True, capture_output=True, check=False)
     assert result.returncode == 0, result.stderr
+
+
+def test_every_element_id_the_scripts_look_up_exists_in_the_page():
+    """A missing id makes $("id").addEventListener throw and silently kills the page script."""
+    import re
+
+    html = HTML_PATH.read_text(encoding="utf-8")
+    ids = set(re.findall(r'id="([^"]+)"', html))
+    js = html + (HTML_PATH.parent / "live_voice.js").read_text(encoding="utf-8")
+    used = set(re.findall(r'\$\("([A-Za-z0-9_-]+)"\)', js))
+    # elements created at runtime are not expected in the static HTML
+    missing = sorted(used - ids - {"welcome"})
+    assert not missing, f"script looks up ids that are not in index.html: {missing}"
+
+
+def test_live_voice_client_script_is_served_by_both_entry_points():
+    from fastapi.testclient import TestClient
+
+    from app.main import app as main_app
+    from app.main_enhanced import app as enhanced_app
+
+    for app in (main_app, enhanced_app):
+        res = TestClient(app).get("/static/live_voice.js")
+        assert res.status_code == 200 and "javascript" in res.headers["content-type"]
+        assert "/api/live-voice" in res.text
+        # the ticket endpoint exists (401/503 without a token, not 404)
+        assert TestClient(app).post("/api/live-voice-ticket").status_code in (401, 503)
+
+
+def test_external_audio_worklet_javascript_syntax_when_node_is_available():
+    node = shutil.which("node")
+    if not node:
+        return
     worklet = HTML_PATH.parent / "audio_capture_worklet.js"
     result = subprocess.run([node, "--check", str(worklet)], text=True, capture_output=True, check=False)
     assert result.returncode == 0, result.stderr

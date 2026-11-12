@@ -9,9 +9,14 @@ JSON client frames:
   {"type":"audio_end"}
   {"type":"stop"}
   {"type":"ping"}
+  {"type":"approval","id":"<request id>","approve":true|false}
+
+A state-changing voice tool (create_reminder) is held until the client answers
+an approval_request. No answer within APPROVAL_TIMEOUT_SECONDS, a disconnect, or
+anything other than approve=true is a denial.
 
 JSON server events:
-  ready, audio, text, transcript, turn_complete, interrupted, error
+  ready, audio, text, transcript, turn_complete, interrupted, tool, approval_request, error
 
 This is a server-brokered session; the client never receives the Gemini key.
 The browser exchanges its bearer token for a single-use, 60-second WebSocket ticket.
@@ -24,6 +29,7 @@ import base64
 import binascii
 import json
 import logging
+import os
 import secrets
 import threading
 import time
@@ -34,6 +40,7 @@ from google import genai
 from google.genai import types
 from starlette.websockets import WebSocketState
 
+from app import live_tools
 from app.config import get_settings
 from app.personal_data import require_device_token
 from app.personality import SYSTEM_INSTRUCTIONS
@@ -71,6 +78,57 @@ def _release_live_session(client_key: str) -> None:
             _active_live_sessions.pop(key, None)
         else:
             _active_live_sessions[key] = active - 1
+
+# Per-session guardrails. They bound cost and exposure; override with env vars.
+MAX_SESSION_SECONDS = int(os.getenv("JARVIS_LIVE_MAX_SESSION_SECONDS", "900"))
+IDLE_TIMEOUT_SECONDS = int(os.getenv("JARVIS_LIVE_IDLE_TIMEOUT_SECONDS", "120"))
+# 16 kHz mono PCM16 is 32,000 bytes per second; allow 1.5x real time per minute.
+MAX_AUDIO_BYTES_PER_MINUTE = int(os.getenv("JARVIS_LIVE_MAX_AUDIO_BYTES_PER_MINUTE", str(32_000 * 60 * 3 // 2)))
+APPROVAL_TIMEOUT_SECONDS = int(os.getenv("JARVIS_LIVE_APPROVAL_TIMEOUT_SECONDS", "60"))
+MAX_CONCURRENT_SESSIONS = int(os.getenv("JARVIS_LIVE_MAX_CONCURRENT_SESSIONS", "2"))
+_active_sessions = 0
+
+
+class SessionGuard:
+    """Tracks one live session's age, idleness and audio volume."""
+
+    def __init__(self, now=time.monotonic, max_seconds: int | None = None, idle_seconds: int | None = None,
+                 max_audio_bytes_per_minute: int | None = None):
+        self._now = now
+        self.max_seconds = MAX_SESSION_SECONDS if max_seconds is None else max_seconds
+        self.idle_seconds = IDLE_TIMEOUT_SECONDS if idle_seconds is None else idle_seconds
+        self.max_audio = MAX_AUDIO_BYTES_PER_MINUTE if max_audio_bytes_per_minute is None else max_audio_bytes_per_minute
+        self.started = now()
+        self.last_activity = self.started
+        self._window_start = self.started
+        self._window_bytes = 0
+
+    def touch(self) -> None:
+        """Record real user activity (audio or text). Pings do not count."""
+        self.last_activity = self._now()
+
+    def remaining(self) -> float:
+        """Seconds until the session must end for age or idleness."""
+        now = self._now()
+        return min(self.started + self.max_seconds - now, self.last_activity + self.idle_seconds - now)
+
+    def expiry_reason(self) -> str | None:
+        now = self._now()
+        if now - self.started >= self.max_seconds:
+            return "Session time limit reached."
+        if now - self.last_activity >= self.idle_seconds:
+            return "Session closed after being idle."
+        return None
+
+    def allow_audio(self, nbytes: int) -> bool:
+        """Rate-limit audio sent to the provider per rolling minute."""
+        now = self._now()
+        if now - self._window_start >= 60:
+            self._window_start, self._window_bytes = now, 0
+        if self._window_bytes + nbytes > self.max_audio:
+            return False
+        self._window_bytes += nbytes
+        return True
 
 
 def _issue_live_ticket() -> str:
@@ -152,15 +210,46 @@ async def live_voice(websocket: WebSocket):
         await websocket.close(code=1013, reason="Gemini API is not configured")
         return
 
+    global _active_sessions
+    if _active_sessions >= MAX_CONCURRENT_SESSIONS:
+        await websocket.close(code=1013, reason="too many live voice sessions")
+        return
     client_info = websocket.client
     client_key = str(client_info.host) if client_info else "unknown"
     if not _reserve_live_session(client_key):
         await websocket.close(code=4429, reason="live voice session limit reached")
         return
+    guard = SessionGuard()
+    session_audio_bytes = 0
 
     receive_task: asyncio.Task | None = None
-    session_started = time.monotonic()
-    session_audio_bytes = 0
+    pending_approvals: dict[str, asyncio.Future] = {}
+
+    async def run_tool(name: str, args: dict) -> dict:
+        """Run an allow-listed tool; hold approval-gated ones for an explicit yes."""
+        if name not in live_tools.APPROVAL_TOOL_NAMES:
+            return live_tools.response_payload(await asyncio.to_thread(live_tools.execute, name, args))
+        prepared, summary = live_tools.prepare_approval(name, args)
+        if prepared is None:
+            return {"success": False, "error": summary}
+        if pending_approvals:
+            return {"success": False, "error": "Another approval is already waiting."}
+        request_id = secrets.token_urlsafe(9)
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        pending_approvals[request_id] = future
+        try:
+            await _send(websocket, {"type": "approval_request", "id": request_id, "name": name,
+                                    "summary": summary, "expires_in": APPROVAL_TIMEOUT_SECONDS})
+            try:
+                approved = await asyncio.wait_for(future, timeout=APPROVAL_TIMEOUT_SECONDS)
+            except (TimeoutError, asyncio.CancelledError):
+                approved = False
+        finally:
+            pending_approvals.pop(request_id, None)
+        if approved is not True:
+            return {"success": False, "error": "The user did not approve. Nothing was changed."}
+        return live_tools.response_payload(await asyncio.to_thread(live_tools.execute_approved, name, prepared))
+    _active_sessions += 1
     try:
         await websocket.accept()
         client = genai.Client(api_key=settings.gemini_api_key)
@@ -170,7 +259,9 @@ async def live_voice(websocket: WebSocket):
                 "\nSpeak naturally and concisely as JARVIS, a personal assistant. "
                 "Do not claim an action was performed unless the connected tool reports success. "
                 "For consequential actions, ask for explicit confirmation."
+                + live_tools.VOICE_TOOL_INSTRUCTION
             ),
+            "tools": [{"function_declarations": live_tools.ALL_DECLARATIONS}],
             "speech_config": {"voice_config": {"prebuilt_voice_config": {"voice_name": settings.gemini_live_voice}}},
             "input_audio_transcription": {},
             "output_audio_transcription": {},
@@ -190,6 +281,15 @@ async def live_voice(websocket: WebSocket):
                     # turn_complete; re-enter it so later turns keep flowing.
                     while True:
                         async for response in session.receive():
+                            tool_call = getattr(response, "tool_call", None)
+                            if tool_call and getattr(tool_call, "function_calls", None):
+                                responses = []
+                                for fc in tool_call.function_calls:
+                                    result = await run_tool(fc.name, dict(fc.args or {}))
+                                    await _send(websocket, {"type": "tool", "name": fc.name, "ok": bool(result.get("success"))})
+                                    responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"output": result}))
+                                await session.send_tool_response(function_responses=responses)
+                                continue
                             server_content = getattr(response, "server_content", None)
                             if not server_content:
                                 continue
@@ -224,14 +324,14 @@ async def live_voice(websocket: WebSocket):
 
             receive_task = asyncio.create_task(pump_provider())
             while True:
-                remaining_seconds = MAX_SESSION_SECONDS - (time.monotonic() - session_started)
-                if remaining_seconds <= 0:
-                    await _send(websocket, {"type": "error", "message": "Live voice session time limit reached."})
-                    break
-                try:
-                    raw = await asyncio.wait_for(websocket.receive_text(), timeout=remaining_seconds)
-                except TimeoutError:
-                    await _send(websocket, {"type": "error", "message": "Live voice session time limit reached."})
+                reason = guard.expiry_reason()
+                if reason is None:
+                    try:
+                        raw = await asyncio.wait_for(websocket.receive_text(), timeout=max(guard.remaining(), 0.01))
+                    except TimeoutError:
+                        reason = guard.expiry_reason() or "Session closed after being idle."
+                if reason is not None:
+                    await _send(websocket, {"type": "error", "message": reason + " Start a new session to continue."})
                     break
                 if len(raw) > (MAX_AUDIO_BYTES * 2):
                     await _send(websocket, {"type": "error", "message": "Frame too large."})
@@ -247,15 +347,24 @@ async def live_voice(websocket: WebSocket):
                 kind = message.get("type")
                 if kind == "ping":
                     await _send(websocket, {"type": "pong"})
+                elif kind == "approval":
+                    pending = pending_approvals.get(message.get("id")) if isinstance(message.get("id"), str) else None
+                    if pending is None or pending.done():
+                        await _send(websocket, {"type": "error", "message": "No matching approval request."})
+                    else:
+                        guard.touch()
+                        pending.set_result(message.get("approve") is True)
                 elif kind == "stop":
                     # Server-side voice activity should interrupt the model. The UI
                     # must also stop/flush local audio playback immediately.
                     await session.send_realtime_input(text="Stop speaking now.")
+                    guard.touch()
                 elif kind == "text":
                     text = message.get("text")
                     if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT_CHARS:
                         await _send(websocket, {"type": "error", "message": "Text is empty or too long."})
                         continue
+                    guard.touch()
                     await session.send_realtime_input(text=text.strip())
                 elif kind == "audio":
                     try:
@@ -267,6 +376,10 @@ async def live_voice(websocket: WebSocket):
                     if session_audio_bytes > MAX_SESSION_AUDIO_BYTES:
                         await _send(websocket, {"type": "error", "message": "Live voice session audio budget reached."})
                         break
+                    if not guard.allow_audio(len(pcm)):
+                        await _send(websocket, {"type": "error", "message": "Audio rate limit exceeded; slow down."})
+                        continue
+                    guard.touch()
                     await session.send_realtime_input(audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000"))
                 elif kind == "audio_end":
                     await session.send_realtime_input(audio_stream_end=True)
@@ -278,6 +391,10 @@ async def live_voice(websocket: WebSocket):
         logger.exception("Live voice session failed")
         await _send(websocket, {"type": "error", "message": "Live voice session failed. Check server configuration."})
     finally:
+        _active_sessions = max(0, _active_sessions - 1)
+        for fut in pending_approvals.values():
+            if not fut.done():
+                fut.set_result(False)
         if receive_task and not receive_task.done():
             receive_task.cancel()
             try:

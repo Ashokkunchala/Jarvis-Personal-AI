@@ -188,8 +188,15 @@ def ask(
             break
 
 
+async def _cli_confirm(tool, args) -> bool:
+    """Ask on the terminal before a tool that needs approval runs."""
+    console.print(f"[yellow]JARVIS wants to run[/yellow] [bold]{tool.name}[/bold] ({tool.risk.name} risk)")
+    console.print(f"[dim]{args}[/dim]")
+    return typer.confirm("Allow?", default=False)
+
+
 async def _stream_reply(brain, prompt: str, buffer: list[str]) -> None:
-    async for event in brain.ask(prompt):
+    async for event in brain.ask(prompt, confirm=_cli_confirm):
         kind = event["type"]
         if kind == "text_delta":
             text = event["text"]
@@ -214,6 +221,10 @@ async def _stream_reply(brain, prompt: str, buffer: list[str]) -> None:
 @app.command()
 def tui():
     """Launch the realtime streaming terminal UI (local brain, no server)."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        err_console.print("[red]The terminal UI needs an interactive terminal.[/red] "
+                          "Use [bold]jarvis ask[/bold] for plain streamed output.")
+        raise typer.Exit(code=2)
     from jarvis.terminal.jarvis_tui import JarvisTUI
 
     console.print("[cyan]Launching JARVIS terminal UI…[/cyan]")

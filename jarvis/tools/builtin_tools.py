@@ -167,6 +167,7 @@ def build_registry(force: bool = False) -> ToolRegistry:
     _register_network(registry)
     _register_shell(registry)
     _register_notify(registry)
+    _register_devops(registry)
     _register_android_device(registry)
     _register_android_apps(registry)
     _register_android_input(registry)
@@ -851,6 +852,87 @@ def _register_shell(r: ToolRegistry) -> None:
         ),
         handler=lambda command, timeout=60, cwd=None: get_laptop().run_shell(command, timeout, cwd),
         risk=Risk.HIGH, category="shell", requires_confirmation=True,
+    ))
+
+
+# ------------------------------------------------------------------- devops
+def _register_devops(r: ToolRegistry) -> None:
+    """AWS / DevOps tools. Reviews are offline; AWS calls use the user's own CLI profile."""
+    from jarvis.devops import awscli, review, runbooks
+
+    r.register(Tool(
+        name="review_terraform",
+        description="Scan Terraform (.tf) files under a local path for risky patterns (open security groups, public S3, hardcoded secrets, missing backend). Read-only, offline.",
+        parameters=_obj({"path": _str("File or directory to scan.")}, ["path"]),
+        handler=lambda path: review.review_terraform(path),
+        risk=Risk.SAFE, category="devops",
+    ))
+    r.register(Tool(
+        name="review_dockerfile",
+        description="Check Dockerfiles under a local path (unpinned base image, root user, secrets in ENV, curl|sh). Read-only, offline.",
+        parameters=_obj({"path": _str("File or directory to scan.")}, ["path"]),
+        handler=lambda path: review.review_dockerfile(path),
+        risk=Risk.SAFE, category="devops",
+    ))
+    r.register(Tool(
+        name="review_cicd",
+        description="Review GitHub Actions workflows and Jenkinsfiles under a path (unpinned actions, pull_request_target, static AWS keys, auto-approved terraform apply). Read-only, offline.",
+        parameters=_obj({"path": _str("Repository or file path.")}, ["path"]),
+        handler=lambda path: review.review_cicd(path),
+        risk=Risk.SAFE, category="devops",
+    ))
+    r.register(Tool(
+        name="review_iam_policy",
+        description="Review an IAM policy JSON document for wildcard actions, PassRole on *, public principals. Offline, no AWS call.",
+        parameters=_obj({"policy_json": _str("The IAM policy document as JSON text.")}, ["policy_json"]),
+        handler=lambda policy_json: review.review_iam_policy(policy_json),
+        risk=Risk.SAFE, category="devops",
+    ))
+    r.register(Tool(
+        name="devops_runbook",
+        description="Troubleshooting checklist for ECS, EKS, Terraform state locks, Jenkins AWS pipelines, ALB 5xx and IAM AccessDenied. Omit topic to list topics.",
+        parameters=_obj({"topic": _str("Runbook name or keyword, e.g. ecs-task-stopped.")}),
+        handler=lambda topic="": runbooks.get_runbook(topic) if topic else runbooks.list_runbooks(),
+        risk=Risk.SAFE, category="devops",
+    ))
+    r.register(Tool(
+        name="aws_read",
+        description=(
+            "Run a read-only AWS CLI call (describe-*, list-*, get-*, s3 ls) with the user's configured profile. "
+            "Refuses anything that changes state, returns secrets, or is billed per request."
+        ),
+        parameters=_obj(
+            {
+                "service": _str("AWS CLI service, e.g. ecs, ec2, logs."),
+                "operation": _str("Operation, e.g. describe-clusters."),
+                "args": _array("Extra CLI arguments, e.g. ['--cluster','prod'].", {"type": "string"}),
+                "profile": _str("Optional AWS profile name."),
+                "region": _str("Optional region, e.g. ap-south-1."),
+            },
+            ["service", "operation"],
+        ),
+        handler=lambda service, operation, args=None, profile=None, region=None: awscli.run_read(service, operation, args, profile, region),
+        risk=Risk.LOW, category="devops",
+    ))
+    r.register(Tool(
+        name="aws_change",
+        description=(
+            "Run an AWS CLI call that may change resources, cost money or read secrets. Always asks the user first. "
+            "Pass dry_run=true to see the exact command without running it."
+        ),
+        parameters=_obj(
+            {
+                "service": _str("AWS CLI service."),
+                "operation": _str("Operation."),
+                "args": _array("Extra CLI arguments.", {"type": "string"}),
+                "profile": _str("Optional AWS profile name."),
+                "region": _str("Optional region."),
+                "dry_run": _bool("Only show the command that would run."),
+            },
+            ["service", "operation"],
+        ),
+        handler=lambda service, operation, args=None, profile=None, region=None, dry_run=False: awscli.run(service, operation, args, profile, region, dry_run=dry_run),
+        risk=Risk.HIGH, category="devops", requires_confirmation=True, never_auto_approve=True,
     ))
 
 

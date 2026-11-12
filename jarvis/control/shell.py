@@ -63,6 +63,10 @@ def classify(command: str) -> str:
         if re.search(pattern, command, re.IGNORECASE):
             return "blocked"
 
+    # Chained, piped, redirected or substituted commands are judged by their
+    # first word only, so never auto-classify them as safe.
+    chained = bool(re.search(r"[;&|<>`\n\r]|\$\(", command))
+
     head = _head(command)
     lowered = command.lower()
     if head in DANGEROUS_HEADS or head.lower() in {h.lower() for h in DANGEROUS_HEADS}:
@@ -70,6 +74,8 @@ def classify(command: str) -> str:
     for token in DANGEROUS_HEADS:
         if lowered.startswith(token.lower() + " ") or lowered.startswith(token.lower() + ";"):
             return "confirm"
+    if chained:
+        return "confirm"
     if head in SAFE_HEADS or command.lower().startswith(tuple(h.lower() + " " for h in SAFE_HEADS)):
         return "safe"
     return "confirm"

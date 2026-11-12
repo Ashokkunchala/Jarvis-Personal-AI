@@ -6,9 +6,12 @@
 - Browser Live Voice client that requests microphone access after a user click, down-samples audio to 16 kHz PCM16, streams frames to the backend, and plays returned 24 kHz PCM audio.
 - Default Live Voice profile uses Gemini's `Charon` prebuilt voice for a composed, lower-register assistant style. Override with `GEMINI_LIVE_VOICE` in `.env` if your enabled model supports another prebuilt voice. This is an original JARVIS-inspired voice profile, not a copy of a film actor's exact voice.
 - FastAPI WebSocket route at `/api/live-voice`. It authenticates the configured bearer token, checks browser Origin against configured CORS origins, keeps the Gemini API key on the server, validates payload sizes, opens a Gemini Live session, forwards audio/text/transcripts, and closes the session on disconnect.
-- The server caps each audio frame at 64 KiB, cumulative input per session at 16 MiB, and each session at 10 minutes.
-- The backend permits at most two simultaneous Live Voice provider sessions per client IP in a single process; excess sessions are rejected with a clear limit status. This is a local guardrail, not a distributed or provider-account usage quota.
-- Typed chat remains available as a fallback. Voice-session model tool calls are not permitted to execute device actions.
+- Typed chat remains available as a fallback. The voice session can call three read-only tools (current time, open reminders, saved memories; see `app/live_tools.py`). Any other tool call is refused, and nothing in voice can change data or device state.
+
+- Server-side guardrails on each live session: session length, idle timeout, audio volume per minute and a concurrent-session cap (see CHANGELOG for the environment variables). Covered by tests with a fake provider client; not exercised against the real Live API.
+- The server also caps cumulative input per session at 16 MiB and permits at most two simultaneous Live Voice provider sessions per client IP in a single process; excess sessions are rejected with a clear limit status. This is a local guardrail, not a distributed or provider-account usage quota.
+
+- Browser wake word ("Hey Jarvis" checkbox) is opt-in and session-only. It uses the browser's built-in speech recognition, which in Chrome and Edge sends audio to the vendor speech service - it is not an offline wake word. The fully local wake word is `jarvis start` with the openWakeWord model (install `requirements-jarvis.txt`). The browser listener stops while a Live Voice session is active.
 
 ## Not yet proven / not production-ready
 
@@ -21,13 +24,16 @@
 - Live audio responses and transcripts are streamed to the page. The raw audio is not explicitly saved by the client, but audio is sent to the configured Gemini API as part of the Live session.
 - The Android client now has an explicit start/stop/interrupt Live Voice controller using a one-time ticket, `AudioRecord` 16 kHz PCM input, and `AudioTrack` 24 kHz output. It runs only while the visible activity is active; its build, permission flows, and audio behavior still need device verification.
 
+## Voice approvals
+`create_reminder` is the only state-changing voice tool. The server sends `{"type":"approval_request","id","summary"}` and waits; the client answers `{"type":"approval","id","approve":true|false}`. Anything except `approve: true` for the pending id (timeout, disconnect, wrong id, invalid arguments) means nothing is changed. Untested with a real browser and real Live model.
+
 ## Security expectations
 
 - Never expose the Gemini key in browser JS or Android resources.
 - Do not expose this shared-token prototype through a public tunnel.
 - Before a remote deployment, implement per-device pairing/revocation, rate/time/token budgets, request quotas, session limits, safe error responses, audit logs with token redaction, TLS, allowed origins, and backup/restore.
 - No hidden microphone or automatic background recording. Show when audio is being captured and provide an obvious stop button.
-- The live audio route deliberately does not execute model tool calls. Device actions require the separate JARVIS confirmation workflow.
+- The live audio route executes only the read-only allow-list in `app/live_tools.py`. Changes and device actions require the separate JARVIS confirmation workflow; a voice-side approval step is not built yet.
 
 ## Acceptance checklist
 
