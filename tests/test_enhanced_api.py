@@ -219,7 +219,11 @@ def test_enhanced_app_registers_live_voice_routes_once():
     from app.live_voice import router as live_voice_router
 
     expected = Counter(route.path for route in live_voice_router.routes)
-    registered = Counter(
-        route.path for route in app.routes if getattr(route, "path", None) in expected
-    )
+    registered = Counter()
+    for route in app.routes:
+        if getattr(route, "path", None) in expected:
+            registered[route.path] += 1
+        for child in getattr(route, "routes", ()):
+            if getattr(child, "path", None) in expected:
+                registered[child.path] += 1
     assert registered == expected
