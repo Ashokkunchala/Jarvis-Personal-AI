@@ -5,9 +5,20 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
+import pytest
 from textual.widgets import Input
 
 from jarvis.terminal.jarvis_tui import JarvisTUI
+
+
+@pytest.fixture(autouse=True)
+def _typed_first(monkeypatch) -> None:
+    """These typed-flow tests run with voice-first startup disabled.
+
+    Voice-first defaults and the listening loop are covered separately in
+    tests/test_tui_ascii_voice.py.
+    """
+    monkeypatch.setenv("JARVIS_TUI_VOICE_FIRST", "0")
 from jarvis.tools.registry import Risk, Tool
 
 
