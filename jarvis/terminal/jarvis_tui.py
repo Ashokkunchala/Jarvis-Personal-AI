@@ -22,7 +22,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Input, Markdown, Static
+from textual.widgets import Button, Input, Markdown, Static
 
 from jarvis.core.brain import JarvisBrain
 from jarvis.tools.registry import Tool
@@ -525,10 +525,15 @@ class JarvisTUI(App):
         android = snap.get("android") or {}
         t = Text()
         if laptop.get("success"):
-            t.append("CPU  ", style="dim"); t.append(_bar(laptop.get("cpu_percent"))); t.append("\n")
-            t.append("RAM  ", style="dim"); t.append(_bar(laptop.get("memory_percent"))); t.append("\n")
+            t.append("CPU  ", style="dim")
+            t.append(_bar(laptop.get("cpu_percent")))
+            t.append("\n")
+            t.append("RAM  ", style="dim")
+            t.append(_bar(laptop.get("memory_percent")))
+            t.append("\n")
             bat = laptop.get("battery_percent")
-            t.append("BAT  ", style="dim"); t.append(_bar(bat, invert=True))
+            t.append("BAT  ", style="dim")
+            t.append(_bar(bat, invert=True))
             if bat is not None:
                 t.append("  AC" if laptop.get("battery_plugged") else "  batt", style="dim")
             t.append("\n")
@@ -542,13 +547,17 @@ class JarvisTUI(App):
         providers = ", ".join(self.brain.provider_candidates()) if configured else ""
         v.append("AI provider  ", style="dim")
         v.append((providers or "none") if configured else "no key set", style="#38e8a0" if configured else "#ff5c6c")
-        v.append("\nmodel        ", style="dim"); v.append(_brief(str(self.brain.active_model), 20), style="#c792ff")
-        v.append("\ntools        ", style="dim"); v.append(str(len(self.brain.registry)), style="#36d6ff")
+        v.append("\nmodel        ", style="dim")
+        v.append(_brief(str(self.brain.active_model), 20), style="#c792ff")
+        v.append("\ntools        ", style="dim")
+        v.append(str(len(self.brain.registry)), style="#36d6ff")
         v.append("\nphone        ", style="dim")
         v.append("connected" if android.get("connected") else "not connected",
                  style="#38e8a0" if android.get("connected") else "#5b7a99")
-        v.append("\nvoice        ", style="dim"); v.append("MIC button", style="#86a7c8")
-        v.append("\nhistory      ", style="dim"); v.append(f"{len(self.brain.history)} msgs", style="#86a7c8")
+        v.append("\nvoice        ", style="dim")
+        v.append("MIC button", style="#86a7c8")
+        v.append("\nhistory      ", style="dim")
+        v.append(f"{len(self.brain.history)} msgs", style="#86a7c8")
         self.query_one("#services", Static).update(v)
 
     # ---------------------------------------------------------------- input
