@@ -1,52 +1,123 @@
-# Native Android application
+# JARVIS for Android
 
-The native Kotlin + Jetpack Compose app currently supports:
-- HTTPS health check to a user-configured backend.
-- Android Keystore AES-GCM encrypted bearer-token storage with a clear-token control.
-- Android Keystore AES-GCM encrypted backend URL storage for opt-in background reminder polling.
-- Initial authenticated Gemini chat over HTTPS.
-- Explicit microphone permission request and tap-to-speak speech recognition (the transcript is shown for review before sending).
-- User-started full-duplex Gemini Live audio over the authenticated, short-lived-ticket WebSocket bridge, with visible start, interrupt, and stop controls. The microphone session runs only while the app is visible.
-- Spoken assistant replies using Android's installed text-to-speech voice.
-- Language selection cycling through adaptive/auto, Indian English, and Telugu.
-- Quick shortcuts to Android device, Wi-Fi, Bluetooth, and JARVIS app-permission settings; supported voice transcripts can be reviewed and explicitly confirmed before opening a system screen.
-- Authenticated reminder creation and reminder-list refresh through the backend.
-- Reminder completion and daily/weekly/monthly recurrence through the backend.
-- Opt-in WorkManager reminder polling with Android notification permission. Delivery is best-effort and may be delayed by at least 15 minutes or by unavailable network.
-- Master-token-backed device pairing. The master token is sent only over HTTPS and never stored; the issued device token, backend URL, and device ID are encrypted with Android Keystore.
-- Confirmed device revocation from the app using the master token. Local “Forget device token” clears this phone only; it does not revoke the backend credential.
-- Cleartext HTTP disabled; there is no always-on microphone or guaranteed auto-start after reboot.
+Native Kotlin + Jetpack Compose app with the cinematic command-centre look: deep
+navy panels, cyan accents and the glowing AI Core orb. It talks to your own
+JARVIS backend over HTTPS on your private network.
 
-The current Android changes still need a CI build and physical-device tests. Memory editing, workout tracking, and background data sync are not implemented in the Android app yet.
+## What the app does
 
-## Build
+- Cinematic command centre: animated AI Core orb (offline / idle / listening /
+  working states), dark navy panels, cyan status lights.
+- Secure connect: HTTPS health check to a user-configured backend; cleartext
+  HTTP is disabled.
+- Device pairing: the backend master token is sent once (never stored) to issue
+  a per-device token; the issued token, backend URL and device ID are encrypted
+  with Android Keystore AES-GCM. Paired devices can be revoked after an explicit
+  confirmation; "Forget device token" clears this phone only.
+- Chat with short conversation history: text input plus tap-to-speak speech
+  recognition (transcript shown for review before sending) and spoken replies
+  through the phone's installed text-to-speech voice.
+- Personality modes: Assistant, Friend, Teacher, Storyteller and Doctor chips
+  send the mode with each chat request, matching the web command centre. Doctor
+  mode gives general health information only and is not medical advice.
+- Quick actions: one-tap prompt chips (system status, story, song, AWS lesson,
+  today's reminders) that fill the message box for review before sending.
+- Activity & approvals feed: polls the backend's bounded runtime event feed and
+  shows what JARVIS is doing. Confirmations for sensitive or irreversible
+  actions stay on your laptop; the phone feed is read-only on purpose.
+- Live Voice: user-started full-duplex Gemini Live audio over the
+  authenticated, short-lived-ticket WebSocket bridge, with visible start,
+  interrupt and stop controls. The microphone runs only while the app is visible.
+- Reminders: create, list, complete and recurring reminders through the
+  backend; opt-in WorkManager reminder polling with Android notifications
+  (best-effort, may be delayed at least 15 minutes; not an alarm service).
+- Explicit memories: save, review and delete only the facts you choose.
+- Phone controls: quick links to Android device, Wi-Fi, Bluetooth and JARVIS
+  app-permission settings; supported voice transcripts open the matching system
+  screen only after you tap "Run recognized phone command".
+- Language: reply language cycles through adaptive/auto, Indian English and
+  Telugu.
 
-Install Android Studio with Android SDK 35 and JDK 17, then open the `android/` directory as a project and let Gradle sync. GitHub Actions builds the debug APK with Gradle 8.9 and uploads it as the `jarvis-android-debug-apk` workflow artifact.
+No hardcoded secrets, no analytics, no third-party tracking, no cloud spend.
 
-To build locally, use Android Studio's Build menu or from a terminal with Gradle and Android SDK configured:
+## Build the APK
+
+Everything needed is in this directory: the Gradle wrapper (`gradlew`,
+`gradlew.bat`, `gradle/wrapper/gradle-wrapper.jar`,
+`gradle/wrapper/gradle-wrapper.properties`) and pinned dependency versions in
+`app/build.gradle.kts`. You do not need to install Gradle yourself.
+
+Requirements:
+
+- JDK 17 (Android Studio bundles one, or install any OpenJDK 17).
+- Android SDK with Platform 35 and Build-Tools 35.0.0. The easiest way to get
+  both is Android Studio (Settings > SDK Manager). Tell Gradle where the SDK is
+  with the `ANDROID_HOME` environment variable or a `local.properties` file
+  containing `sdk.dir=/path/to/Android/Sdk` (never commit `local.properties`).
+
+Option 1 - Android Studio (recommended):
+
+1. Install Android Studio, then open this `android/` directory as a project.
+2. Let Gradle sync finish (it downloads Gradle 8.9 and the dependencies once).
+3. Build > Build App Bundle(s)/APK(s) > Build APK(s). The APK lands at
+   `app/build/outputs/apk/debug/app-debug.apk`.
+4. With your phone connected by USB with USB debugging on, use Run to install
+   it directly.
+
+Option 2 - command line:
 
 ```sh
 cd android
-gradle assembleDebug
+./gradlew assembleDebug        # Windows: gradlew.bat assembleDebug
 ```
 
-The expected APK path after a successful build is `app/build/outputs/apk/debug/app-debug.apk`. A CI build does not prove that the app has been installed on your phone or that your backend is reachable from it. Android 14 restricts starting microphone foreground services from boot; launch JARVIS yourself and tap Speak to start microphone use. The Windows one-file installer does not install the Android APK.
+The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Copy it to
+your phone and tap it to install (allow installs from this source when
+Android asks), or install over USB with `adb install app/build/outputs/apk/debug/app-debug.apk`.
+
+GitHub Actions also builds the debug APK on every push to this branch (the
+`android-build` job in `.github/workflows/tests.yml`) and uploads it as the
+`jarvis-android-debug-apk` artifact. A CI build proves the code compiles; it
+does not prove the app runs on your phone or that your backend is reachable.
 
 ## Connect your phone safely
 
-1. Start the enhanced backend with `jarvis serve` on a machine reachable by the phone over a private network or a secured HTTPS host. Its device-management endpoints are part of this CLI backend.
-2. The app accepts only an `https://` endpoint. `http://127.0.0.1:8000` on the phone points to the phone itself, not your laptop.
-3. For a per-device credential, enter a descriptive device name and the backend's master `JARVIS_API_TOKEN` in the pairing section, then tap **Pair device**. The master token is used for this request and cleared from the form; the issued per-device token is encrypted with Android Keystore. Manual token entry remains available for backends without the device-management endpoints.
-4. Tap **Connect securely**, select your reply language, then type a message and tap **Send**.
-5. Tap **Speak to JARVIS** for one-utterance speech recognition; the transcript is displayed for review before sending. Speech recognition may rely on the Android speech service and its availability/network behavior.
-6. Tap **Start Live Voice** for full-duplex audio. The app asks for microphone permission when you start; use **Interrupt JARVIS** or **Stop Live Voice** to control the session. Live audio is sent to the configured Gemini service.
-7. To receive due reminders, tap **Enable Android notifications** and grant notification permission. WorkManager checks about every 15 minutes when network access is available; this is not an exact alarm.
-8. For spoken chat replies, the app uses the phone's installed TTS voice. Telugu voice quality depends on installed system language data.
-9. To revoke this paired device, re-enter the backend master token, tap **Revoke paired device**, and confirm. **Forget device token** clears local credentials only; it does not revoke the backend token.
+1. Start the backend with `jarvis serve` on a machine reachable by the phone
+   over a private network or a secured HTTPS host.
+2. The app accepts only an `https://` endpoint. `http://127.0.0.1:8000` on the
+   phone points to the phone itself, not your laptop. For plain-HTTP testing on
+   a LAN, put a local HTTPS proxy in front of the backend - never send the
+   bearer token over plain HTTP.
+3. For a per-device credential, enter a descriptive device name and the
+   backend's master `JARVIS_API_TOKEN` in the pairing section, then tap
+   **Pair device**. The issued per-device token is encrypted with Android
+   Keystore. Manual token entry remains available for backends without the
+   device-management endpoints.
+4. Tap **Connect securely**, pick a personality mode, then type or speak.
+5. Tap **Speak to JARVIS** for one-utterance speech recognition; the transcript
+   is displayed for review before sending. Speech recognition may rely on the
+   Android speech service and its availability/network behavior.
+6. Tap **Start Live Voice** for full-duplex audio. Live audio is sent to the
+   configured Gemini service.
+7. To receive due reminders, tap **Enable Android notifications** and grant
+   notification permission. WorkManager checks about every 15 minutes when
+   network access is available; this is not an exact alarm.
+8. To revoke this paired device, re-enter the backend master token, tap
+   **Revoke paired device**, and confirm. **Forget device token** clears local
+   credentials only; it does not revoke the backend credential.
 
-## Security and limitations
+## Honest limitations
 
-- Cleartext traffic is disabled. Never send the bearer token over plain HTTP.
-- Pairing uses the shared master token to issue a per-device bearer token. Protect the master token and use it only over HTTPS. The app can revoke its paired token after an explicit confirmation; local “Forget device token” does not revoke it. Token rotation, device-flow verification, and production authorization remain required before cloud deployment.
-- Android background execution is restricted. No hidden or always-on listening is implemented; future background routines should use WorkManager or properly disclosed foreground services only where appropriate.
-- The backend must remain local/private until authentication, TLS, rate limiting, and production security are completed.
+- The debug APK here is built from source on your machine or CI; there is no
+  signed release build yet.
+- Android 14 restricts starting microphone foreground services from boot;
+  launch JARVIS yourself and tap Speak or Start Live Voice to use the
+  microphone. There is no always-on listening.
+- Telugu voice quality depends on the system language data installed on the
+  phone.
+- Pairing uses the shared master token to issue a per-device token. Token
+  rotation, device-flow verification and production authorization remain
+  required before any cloud deployment; keep the backend local/private until
+  then.
+- Memory editing, workout tracking and background data sync are not implemented
+  in the Android app yet; approvals themselves stay on the laptop by design.
