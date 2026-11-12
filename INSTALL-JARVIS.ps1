@@ -23,79 +23,93 @@ function Set-EnvValue {
     return $Text.TrimEnd() + [Environment]::NewLine + $line + [Environment]::NewLine
 }
 
-try {
-    $pythonExe = $null
+# Return only an executable that actually runs Python 3.11+ (the project minimum).
+# Use one invocation so a failed candidate cannot borrow another probe's exit code.
+function Test-PythonRuntime {
+    param([string]$Executable, [string[]]$LauncherArgs = @())
+    try {
+        $probeOutput = @(& $Executable @LauncherArgs -c "import sys; sys.exit(1) if sys.version_info < (3, 11) else print(sys.executable)" 2>$null)
+        $probeExitCode = $LASTEXITCODE
+        $candidate = $probeOutput | Select-Object -First 1
+        if ($probeExitCode -eq 0 -and $candidate -and (Test-Path -LiteralPath $candidate.Trim() -PathType Leaf)) {
+            return $candidate.Trim()
+        }
+    } catch {
+        # Missing runtimes, Store aliases and launcher errors are failed probes.
+    }
+    return $null
+}
 
-    # Probe the Python launcher without allowing its "no runtime" stderr to abort PowerShell.
-    $pyCommand = Get-Command py -ErrorAction SilentlyContinue
+function Find-PythonRuntime {
+    $pyCommand = Get-Command py -CommandType Application -ErrorAction SilentlyContinue
     if ($pyCommand) {
-        try {
-            $candidate = (& $pyCommand.Source -3 -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1)
-            if ($LASTEXITCODE -eq 0 -and $candidate) {
-                $versionText = (& $pyCommand.Source -3 -c "import sys; print(sys.version_info >= (3,11))" 2>$null | Select-Object -First 1)
-                if ($LASTEXITCODE -eq 0 -and $versionText -eq "True") {
-                    $pythonExe = $candidate.Trim()
-                }
-            }
-        } catch {
-            $pythonExe = $null
+        # A launcher's default can be old even when a supported runtime exists.
+        foreach ($selector in @("-3", "-3.14", "-3.13", "-3.12", "-3.11")) {
+            $candidate = Test-PythonRuntime -Executable $pyCommand.Source -LauncherArgs @($selector)
+            if ($candidate) { return $candidate }
         }
     }
-
-    # Check a python.exe already on PATH, again treating launch errors as a failed probe.
-    if (-not $pythonExe) {
-        $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
-        if ($pythonCommand) {
-            try {
-                $candidate = (& $pythonCommand.Source -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1)
-                $versionText = (& $pythonCommand.Source -c "import sys; print(sys.version_info >= (3,11))" 2>$null | Select-Object -First 1)
-                if ($LASTEXITCODE -eq 0 -and $candidate -and $versionText -eq "True") {
-                    $pythonExe = $candidate.Trim()
-                }
-            } catch {
-                $pythonExe = $null
-            }
+    foreach ($name in @("python", "python3")) {
+        foreach ($command in @(Get-Command $name -CommandType Application -All -ErrorAction SilentlyContinue)) {
+            $candidate = Test-PythonRuntime -Executable $command.Source
+            if ($candidate) { return $candidate }
         }
+    }
+    # Some existing per-user installs have neither a launcher nor PATH entries.
+    foreach ($version in @("314", "313", "312", "311")) {
+        $path = Join-Path $env:LOCALAPPDATA "Programs\Python\Python$version\python.exe"
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            $candidate = Test-PythonRuntime -Executable $path
+            if ($candidate) { return $candidate }
+        }
+    }
+    return $null
+}
+
+function Update-SessionPath {
+    # Read the persisted PATH again; keep any process-only entries as fallbacks.
+    $paths = @(
+        [Environment]::GetEnvironmentVariable("Path", "Machine"),
+        [Environment]::GetEnvironmentVariable("Path", "User"),
+        $env:Path
+    )
+    $env:Path = ($paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ";"
+}
+
+try {
+    $pythonExe = Find-PythonRuntime
+    if (-not $pythonExe) {
+        # An earlier Python install may not yet be on this PowerShell's PATH.
+        Update-SessionPath
+        $pythonExe = Find-PythonRuntime
     }
 
     if (-not $pythonExe) {
-        $wingetCommand = Get-Command winget -ErrorAction SilentlyContinue
+        $wingetCommand = Get-Command winget -CommandType Application -ErrorAction SilentlyContinue
         if (-not $wingetCommand) {
             throw "Python 3.11+ is required and winget is unavailable. Install Python from https://www.python.org/downloads/windows/ and rerun this installer."
         }
 
-        Write-Host "No suitable Python runtime was found. Installing the latest stable Python release (3.14) for this Windows user..." -ForegroundColor Yellow
-        & $wingetCommand.Source install --id Python.Python.3.14 -e --scope user --silent --accept-package-agreements --accept-source-agreements
-        if ($LASTEXITCODE -ne 0) {
-            throw "Automatic Python installation failed. Install the latest stable Python from https://www.python.org/downloads/windows/ and rerun this installer."
+        Write-Host "No suitable Python runtime was found. Installing Python 3.14 for this Windows user..." -ForegroundColor Yellow
+        try {
+            & $wingetCommand.Source install --id Python.Python.3.14 -e --scope user --silent --accept-package-agreements --accept-source-agreements
+        } catch {
+            # Native-command errors must not skip the refresh and runtime check.
+            Write-Warning "winget did not finish normally; checking for an existing Python runtime."
         }
 
-        # Prefer the common per-user install path, then re-probe the launcher in case its path differs.
-        $pythonExe = @(
-            (Join-Path $env:LOCALAPPDATA "Programs\Python\Python314\python.exe"),
-            (Join-Path $env:LOCALAPPDATA "Programs\Python\Python313\python.exe")
-        ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-
+        # winget also returns nonzero when the package is already up to date.
+        # Runtime availability, not winget's exit code or localized text, decides success.
+        Update-SessionPath
+        $pythonExe = Find-PythonRuntime
         if (-not $pythonExe) {
-            $pyCommand = Get-Command py -ErrorAction SilentlyContinue
-            if ($pyCommand) {
-                try {
-                    $candidate = (& $pyCommand.Source -3.14 -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1)
-                    if ($LASTEXITCODE -eq 0 -and $candidate) { $pythonExe = $candidate.Trim() }
-                } catch {
-                    $pythonExe = $null
-                }
-            }
-        }
-
-        if (-not $pythonExe) {
-            throw "Python installation completed but its executable could not be located. Close PowerShell, reopen it, and rerun INSTALL-JARVIS.ps1."
+            throw "No working Python 3.11+ runtime was found after refreshing PATH and checking py, python and python3. Install Python from https://www.python.org/downloads/windows/ (enable Add python.exe to PATH) and rerun this installer."
         }
     }
 
     Write-Host "Downloading current JARVIS branch..."
     $zipPath = Join-Path $tempRoot "jarvis.zip"
-    Invoke-WebRequest -Uri "https://codeload.github.com/Ashokkunchala/Jarvis-Personal-AI/zip/refs/heads/improve/security-quality-gates" -OutFile $zipPath
+    Invoke-WebRequest -Uri "https://codeload.github.com/Ashokkunchala/Jarvis-Personal-AI/zip/refs/heads/jarvis-cinematic-local-voice" -OutFile $zipPath
     Expand-Archive -Path $zipPath -DestinationPath $tempRoot -Force
 
     $sourceRoot = Get-ChildItem $tempRoot -Directory |
