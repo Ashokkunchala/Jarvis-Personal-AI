@@ -8,10 +8,12 @@ The same registry serves the Gemini tool loop, the CLI and the TUI.
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import json
 import logging
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -47,7 +49,7 @@ class Tool:
 
     @property
     def confirm_required(self) -> bool:
-        return self.requires_confirmation or self.risk >= Risk.HIGH
+        return self.requires_confirmation or self.risk >= Risk.MEDIUM
 
     def schema(self) -> dict[str, Any]:
         return {
@@ -103,6 +105,7 @@ class ToolRegistry:
     def __init__(self) -> None:
         self.tools: dict[str, Tool] = {}
         self._built = False
+        self.security_store = None
 
     # -------------------------------------------------------------- register
     def register(self, tool: Tool) -> None:
@@ -207,9 +210,21 @@ class ToolRegistry:
             emit({"type": "tool_error", "tool": name, "error": "unknown tool"})
             return ToolResult(name, False, error=f"Unknown tool: {name}")
 
-        emit({"type": "tool_start", "tool": name, "args": args, "risk": tool.risk.name, "category": tool.category})
+        # Freeze the exact execution arguments before awaiting user input.
+        args = copy.deepcopy(args)
+        from jarvis.security import SecurityStore
+        try:
+            store = self.security_store or SecurityStore()
+            if tool.risk > Risk.SAFE and store.stopped():
+                store.audit(name, "blocked_emergency_stop")
+                return ToolResult(name, False, error="Emergency stop is active.")
+        except Exception:
+            return ToolResult(name, False, error="Execution safety store unavailable; action blocked.")
+        task_scope = uuid.uuid4().hex
+        approval_id = None
+        emit({"type": "tool_start", "tool": name, "args": copy.deepcopy(args), "risk": tool.risk.name, "category": tool.category})
 
-        if tool.never_auto_approve:
+        if tool.never_auto_approve or tool.risk >= Risk.MEDIUM or tool.confirm_required:
             auto_approve = False  # cloud-changing tools always need an explicit yes
         confirmation_args = args
         if tool.confirm_required and (not auto_approve or not tool.allow_auto_approve):
@@ -238,7 +253,9 @@ class ToolRegistry:
                     return ToolResult(name, False, error=error)
                 confirmation_args = {**args, "_preview": preview}
             try:
-                approved = await confirm(tool, confirmation_args)
+                approval_id = store.request(name, args, task_scope)
+                approved = (await confirm(tool, copy.deepcopy(confirmation_args))) is True
+                store.decide(approval_id, bool(approved))
             except Exception:
                 logger.exception("Confirmation callback failed")
                 approved = False
@@ -247,12 +264,23 @@ class ToolRegistry:
                 return ToolResult(name, False, elapsed=time.time() - started, cancelled=True)
 
         try:
+            # Recheck after the confirmation wait: a stop must block queued writes.
+            if tool.risk > Risk.SAFE and store.stopped():
+                store.audit(name, "blocked_emergency_stop")
+                return ToolResult(name, False, error="Emergency stop is active.")
+            if approval_id is not None:
+                store.consume(approval_id, name, args, task_scope)
+            store.audit(name, "started")
             if tool.requires_device:
                 args = dict(args)
                 args.setdefault("device", None)
             result = await _invoke(tool.handler, args)
             elapsed = time.time() - started
             tool_result = _normalise(name, result, elapsed)
+            try:
+                store.audit(name, "succeeded" if tool_result.ok else "failed")
+            except Exception:
+                logger.error("Execution completed but its audit update failed: %s", name)
             emit(
                 {
                     "type": "tool_end" if tool_result.ok else "tool_error",
@@ -267,6 +295,10 @@ class ToolRegistry:
         except Exception as exc:
             elapsed = time.time() - started
             logger.exception("Tool %s crashed", name)
+            try:
+                store.audit(name, "failed")
+            except Exception:
+                logger.error("Could not record failed execution: %s", name)
             emit({"type": "tool_error", "tool": name, "error": str(exc), "elapsed": round(elapsed, 3)})
             return ToolResult(name, False, error=str(exc), elapsed=elapsed)
 
