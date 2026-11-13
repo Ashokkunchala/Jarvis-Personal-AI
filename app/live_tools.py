@@ -92,7 +92,11 @@ def execute(name: str, args: dict[str, Any] | None) -> dict[str, Any]:
                 {"title": _clip(r["title"], 200), "due_at_utc": r["due_at"], "overdue": r["due_at"] <= now} for r in rows
             ]}
         with _connect() as db:
-            rows = db.execute("SELECT text, category FROM memories ORDER BY id DESC LIMIT 20").fetchall()
+            rows = db.execute(
+                "SELECT text, category FROM memories WHERE expires_at IS NULL "
+                "OR julianday(expires_at)>julianday(?) ORDER BY id DESC LIMIT 20",
+                (datetime.now(UTC).isoformat(),),
+            ).fetchall()
         return {"success": True, "memories": [{"category": _clip(r["category"], 40), "text": _clip(r["text"], 500)} for r in rows]}
     except Exception as exc:  # noqa: BLE001
         return {"success": False, "error": _clip(exc, 200)}
