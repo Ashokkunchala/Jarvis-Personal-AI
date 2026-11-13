@@ -1171,6 +1171,28 @@ def _register_ownership(r: ToolRegistry) -> None:
         risk=Risk.LOW, category="personal",
     ))
     r.register(Tool(
+        name="list_expenses",
+        description="Review local expense rows and revision tokens for one month. No bank access, payments or currency inference. Use revision tokens before editing.",
+        parameters=_obj({"month": _str("Optional YYYY-MM, default this month."), "limit": _int("Maximum rows, 1-200.", 1, 200)}),
+        handler=_guard(lambda month=None, limit=50: _personal().list_expenses(month, limit)),
+        risk=Risk.SAFE, category="personal",
+    ))
+    r.register(Tool(
+        name="edit_expense",
+        description="Correct one reviewed local expense using its current revision token; rejects changed rows. No payment, deletion, account mutation or currency conversion. Omitted fields are preserved; empty note clears it.",
+        parameters=_obj({
+            "expense_id": _int("Positive ID from list_expenses.", 1),
+            "expected_revision": _str("Exact revision token from list_expenses."),
+            "amount": _num("Optional corrected positive amount, same implicit currency as the existing row."),
+            "category": _str("Optional corrected category."),
+            "note": _str("Optional replacement note; empty string clears it."),
+            "spent_on": _str("Optional corrected YYYY-MM-DD expense date."),
+        }, ["expense_id", "expected_revision"]),
+        handler=_guard(lambda expense_id, expected_revision, amount=None, category=None, note=None, spent_on=None:
+                       _personal().edit_expense(expense_id, expected_revision, amount, category, note, spent_on)),
+        risk=Risk.LOW, category="personal",
+    ))
+    r.register(Tool(
         name="expense_summary",
         description="Spending totals by category for a month (YYYY-MM, default this month).",
         parameters=_obj({"month": _str("Month like 2026-11.")}),
