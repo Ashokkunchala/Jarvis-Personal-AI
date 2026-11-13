@@ -183,6 +183,9 @@ def build_registry(force: bool = False) -> ToolRegistry:
     from jarvis.mentor import register_mentor_tools
 
     register_mentor_tools(registry)
+    from jarvis.devops.evidence import register_evidence_tools
+
+    register_evidence_tools(registry)
 
     build_registry._instance = registry  # type: ignore[attr-defined]
     logger.info("Registered %d tools across %d categories", len(registry), len(registry.categories()))
