@@ -154,7 +154,8 @@ Data stays in `~/.jarvis/mentor.db` (override with `JARVIS_MENTOR_DB`). No lab
 commands are executed, no calendar event is created, and no notification is
 sent. These are starter checkpoints, not complete courses, coding evaluation,
 certification preparation or evidence of mastery. Advanced lessons, coding
-sandboxes, mock interviews and proactive learning reminders remain to build.
+sandboxes and proactive learning reminders remain to build. Mock-interview
+practice has since been added as described below.
 
 ## Offline cloud evidence reviews
 
@@ -292,3 +293,30 @@ itself. Fitness remains general wellness, not diagnosis or treatment. New modes
 are not yet added to the native Android app's separate fixed selector; the
 responsive web interface exposes them on mobile browsers. No live audio or
 real-device testing is claimed by this change.
+
+
+## Offline Kubernetes pod triage
+
+`review_kubernetes_pods(path, restart_threshold=3)` reads a local core-v1 Pod,
+PodList or Pod-only List JSON export (2 MB, at most 500 Pods). It reports Pod
+phases and explicit readiness conditions, current and previous container
+states, cumulative restart counts, known crash-loop/image-pull/OOM signals,
+nonzero exits, unschedulable signals and deletion timestamps. Init and
+ephemeral container statuses are reviewed separately from app containers.
+
+The output distinguishes phase from readiness: a Running Pod is not assumed
+to be ready, missing conditions stay unreported, completed workloads are not
+flagged merely for being unready, and a deletion timestamp is not treated as
+a failure by itself. Pagination tokens trigger a partial-list warning.
+Cumulative restarts are not a restart rate, CrashLoopBackOff is not a root
+cause, and exit code 137 alone is not labelled OOMKilled. Suggested next checks
+are review guidance, never executed commands or automatic remediation.
+
+Raw logs, free-form messages, environment, annotations, images and other spec
+values are omitted. Supply the export path rather than pasting raw values
+into the conversation. Pod/container identifiers remain in the result. The
+snapshot's freshness and completeness are unknown; this is not live cluster
+health, node/service/controller analysis, or a security audit. No credentials,
+cluster connection, deploy, scale, restart or other mutation is performed.
+
+Reference checked: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/
