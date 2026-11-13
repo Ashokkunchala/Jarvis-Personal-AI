@@ -360,3 +360,14 @@ Overdue means an unpassed scheduled checkpoint, not evidence that the user
 did no studying. Neither operation creates external calendar events, sends
 notifications, changes interview progress or enables automatic rescheduling.
 Re-check the preview when the plan or checkpoint results change.
+
+
+## Cross-interface policy audit fixes
+
+Live voice's read-only saved-memory tool now excludes expired backend memories,
+matching future typed-chat context. Expired records remain available for explicit
+review/export until purged; already-sent context cannot be recalled. This does
+not add retention support to the separate enhanced-store implementation.
+Mode-selection tool schemas and brain guidance now discover all supported modes,
+instead of advertising only the original five. Application prompt guidance no
+longer claims blanket laptop/phone access and requires actual tool evidence.
