@@ -542,3 +542,28 @@ No real user files were backed up during development. Tests use disposable
 fixtures only. API behavior checked against:
 - https://docs.python.org/3.11/library/zipfile.html
 - https://docs.python.org/3.11/library/hashlib.html
+
+## Offline dependency-audit evidence review
+
+`review_dependency_audit(path)` summarizes a local pip-audit JSON export, using
+both the current `dependencies` object format and the legacy dependency array.
+It counts packages with reported advisories, packages without reported findings,
+skipped packages, package/advisory pairs and distinct primary IDs. Findings
+retain advisory aliases and reported fix versions without inventing severity,
+exploitability, recommended upgrades or proof that an upgrade is sufficient.
+Aliases are not merged into a claimed count of distinct real vulnerabilities.
+An empty fix-version list means none reported in this export, not no fix exists.
+
+The reader is bounded to 2 MB, 1000 dependencies, 100 advisories/package and
+2000 package/advisory pairs. Duplicate canonical package names or duplicate
+primary IDs within a package are rejected as ambiguous. Free-form descriptions,
+skip reasons and fix-execution records are omitted. No package scanner, network
+request, installation, upgrade, automatic fix, alert or account connection is
+run. Export age, inventory coverage and installed versions remain unverified;
+no findings or skipped packages do not mean secure. Package/advisory identifiers
+are source data and remain in the output. No real environment was audited
+while building this capability.
+
+Provider formats checked:
+- https://github.com/pypa/pip-audit
+- https://raw.githubusercontent.com/pypa/pip-audit/main/pip_audit/_format/json.py
