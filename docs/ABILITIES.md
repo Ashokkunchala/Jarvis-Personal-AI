@@ -422,3 +422,21 @@ Sources checked for these practice briefs:
 - https://react.dev/learn/updating-arrays-in-state
 - https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
 - https://opentelemetry.io/docs/concepts/signals/traces/
+
+## Local note correction and literal search
+
+`edit_note(note_id, expected_text, expected_tags, text?, tags?)` corrects a
+reviewed note's text and/or replaces its tags. It compares both exact current
+text and tags under an atomic transaction to reject stale edits, including
+concurrent tag-only changes. ID and creation time are preserved. Omitted
+fields remain unchanged; an empty tag string clears tags. Empty note text,
+no-op edits and unknown IDs are rejected. This does not edit source documents,
+change saved personal memories or delete notes. Existing LOW-risk mutation and
+emergency-stop boundaries apply.
+
+`search_notes` now treats `%` and `_` literally instead of as SQL wildcard
+patterns, while preserving empty-query newest-note listing and case-insensitive
+ASCII substring behavior. Personal text validation reports wrong types cleanly.
+Expense input validation also rejects NaN, infinity and booleans before SQLite
+insertion. This remains local bookkeeping in the existing currency-unspecified
+store, not payments, a multicurrency ledger or an accounting system.
