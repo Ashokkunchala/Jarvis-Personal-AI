@@ -8,6 +8,7 @@ tells it.
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -44,7 +45,9 @@ def _now() -> str:
 
 
 def _clean(text: str, field: str, required: bool = True) -> str:
-    text = (text or "").strip()
+    if not isinstance(text, str):
+        raise ValueError(f"{field} must be text.")
+    text = text.strip()
     if required and not text:
         raise ValueError(f"{field} is required.")
     if len(text) > MAX_TEXT_CHARS:
@@ -85,21 +88,51 @@ class PersonalStore:
 
     def search_notes(self, query: str = "", limit: int = 20) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 100))
-        like = f"%{query.strip().lower()}%"
+        query = _clean(query, "Search query", False).lower()
         with self._connect() as db:
             rows = db.execute(
-                "SELECT * FROM notes WHERE lower(text) LIKE ? OR tags LIKE ? ORDER BY id DESC LIMIT ?",
-                (like, like, limit),
+                "SELECT * FROM notes WHERE instr(lower(text),?)>0 OR instr(tags,?)>0 ORDER BY id DESC LIMIT ?",
+                (query, query, limit),
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def edit_note(self, note_id: int, expected_text: str, expected_tags: str,
+                  text: str | None = None, tags: str | None = None) -> dict[str, Any]:
+        """Correct a reviewed note, rejecting stale edits including tag-only races."""
+        if type(note_id) is not int or note_id < 1:
+            raise ValueError('Choose a positive integer note ID from search_notes.')
+        if not isinstance(expected_text, str) or not isinstance(expected_tags, str):
+            raise ValueError('Supply the exact current text and tags from search_notes.')
+        if text is None and tags is None:
+            raise ValueError('Supply corrected text, tags, or both.')
+        new_text = _clean(text, 'Note text') if text is not None else None
+        new_tags = None
+        if tags is not None:
+            new_tags = ','.join(t.strip().lower() for t in _clean(tags, 'Tags', False).split(',') if t.strip())
+        with self._connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM notes WHERE id=?', (note_id,)).fetchone()
+            if row is None:
+                raise ValueError('Note not found.')
+            if row['text'] != expected_text or row['tags'] != expected_tags:
+                raise ValueError('Note changed. Search notes again before editing; no change made.')
+            updated_text = row['text'] if new_text is None else new_text
+            updated_tags = row['tags'] if new_tags is None else new_tags
+            if (updated_text, updated_tags) == (row['text'], row['tags']):
+                raise ValueError('The edit must change text or tags.')
+            db.execute('UPDATE notes SET text=?,tags=? WHERE id=?', (updated_text, updated_tags, note_id))
+            result = dict(db.execute('SELECT * FROM notes WHERE id=?', (note_id,)).fetchone())
+        return result
+
     # --------------------------------------------------------------- expenses
     def add_expense(self, amount: float, category: str, note: str = "", spent_on: str | None = None) -> dict[str, Any]:
+        if isinstance(amount, bool):
+            raise ValueError("Amount must be a finite number, not a boolean.")
         try:
             amount = round(float(amount), 2)
         except (TypeError, ValueError) as exc:
             raise ValueError("Amount must be a number.") from exc
-        if amount <= 0 or amount > MAX_AMOUNT:
+        if not math.isfinite(amount) or amount <= 0 or amount > MAX_AMOUNT:
             raise ValueError("Amount must be above zero and below 100,000,000.")
         category = _clean(category, "Category").lower()
         note = _clean(note, "Note", False)
