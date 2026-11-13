@@ -215,3 +215,18 @@ email; the inbox must be reviewed through Jarvis. They do not stop processes,
 clean disks, change system settings, or continue when the backend is stopped.
 Briefing catch-up follows each saved job's existing policy. Terminal-only
 sessions still need the backend or the manual `jarvis briefing run-due` command.
+
+## Task correction, priority and postponement
+
+`edit_commitment(commitment_id, text?, due_at?, clear_due?, priority?)` extends
+the existing commitment tracker rather than creating another to-do database.
+It corrects an open task, postpones its due time, removes its due time, or sets
+priority from 1 (highest) to 5 (lowest). Existing tasks default to priority 3.
+Lists prioritize open work, then due times. Completed tasks cannot be silently
+reopened by this operation. Recording or editing a task never marks work done.
+
+New due dates require an explicit timezone and are normalized to UTC. Overdue
+comparisons now use actual instants rather than comparing timezone-offset strings.
+Existing ambiguous dates stay visible with a warning and are not treated as
+reliable follow-ups until corrected. No external calendar, notification or
+message is created by editing a commitment.
