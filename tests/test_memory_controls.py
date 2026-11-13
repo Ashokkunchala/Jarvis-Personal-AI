@@ -107,3 +107,19 @@ def test_existing_schema_migrates_without_losing_rows(monkeypatch, tmp_path):
         db.executescript("CREATE TABLE memories(id INTEGER PRIMARY KEY,text TEXT NOT NULL,category TEXT NOT NULL,created_at TEXT NOT NULL); INSERT INTO memories VALUES(1,'Keep me','general','2026-11-01');")
     rows = search_memories()
     assert rows[0]['text'] == 'Keep me' and rows[0]['expires_at'] is None
+
+
+def test_live_voice_omits_expired_memory_without_deleting_it(tmp_path, monkeypatch):
+    from app import live_tools
+    from app.personal_data import _connect
+    monkeypatch.setenv('JARVIS_DB_PATH', str(tmp_path / 'voice-memory.db'))
+    with _connect() as db:
+        db.executemany('INSERT INTO memories(text,category,created_at,expires_at) VALUES(?,?,?,?)', [
+            ('expired-private', 'general', '', '2020-01-01T00:00:00Z'),
+            ('active', 'general', '', '9999-01-01T00:00:00Z'),
+            ('no-expiry', 'general', '', None)])
+    result = live_tools.execute('list_memories', {})
+    assert result['success']
+    assert {row['text'] for row in result['memories']} == {'active', 'no-expiry'}
+    with _connect() as db:
+        assert db.execute('SELECT COUNT(*) FROM memories').fetchone()[0] == 3
