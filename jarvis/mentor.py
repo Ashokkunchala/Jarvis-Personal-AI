@@ -177,6 +177,55 @@ class MentorStore:
         return {'sessions': [{'lesson_id': key, 'date': day, 'minutes': duration} for key, day, duration in rows],
                 'notice': 'Local study plan only. No calendar events or notifications were created.'}
 
+    def reschedule_preview(self, start_date: str):
+        """Suggest new dates, keeping all non-overdue sessions in place."""
+        start = date.fromisoformat(start_date)
+        today = date.today()
+        if start < today:
+            raise ValueError('Choose a start date today or later in the computer local calendar.')
+        progress = self.progress(today.isoformat())
+        missed = progress['overdue']
+        missed_ids = {row['lesson_id'] for row in missed}
+        occupied = {row['scheduled_date'] for row in progress['sessions'] if row['lesson_id'] not in missed_ids}
+        proposals = []
+
+        def advance(day):
+            try:
+                return day + timedelta(days=1)
+            except OverflowError as exc:
+                raise ValueError('Not enough calendar dates remain for this preview.') from exc
+
+        for index, row in enumerate(missed):
+            while start.isoformat() in occupied:
+                start = advance(start)
+            proposals.append({'lesson_id': row['lesson_id'], 'expected_date': row['scheduled_date'],
+                              'new_date': start.isoformat(), 'minutes': row['minutes']})
+            occupied.add(start.isoformat())
+            if index + 1 < len(missed):
+                start = advance(start)
+        return {'proposals': proposals, 'changed': False,
+                'notice': 'Preview only, using the computer local calendar. These are overdue unpassed starter checkpoints, not proof of missed study. Apply a chosen proposal with mentor_reschedule_session. No reminders or calendar events.'}
+
+    def reschedule_session(self, lesson_id: str, expected_date: str, new_date: str):
+        self.lesson(lesson_id)
+        previous, target, today = date.fromisoformat(expected_date), date.fromisoformat(new_date), date.today()
+        if previous >= today or target < today:
+            raise ValueError('Only an overdue session can move to today or later in the computer local calendar.')
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current = db.execute('SELECT scheduled_date,minutes FROM mentor_plan WHERE lesson_id=?', (lesson_id,)).fetchone()
+            if current is None or current[0] != previous.isoformat():
+                raise ValueError('Plan changed or session not found. Refresh mentor_progress and preview again.')
+            answer = db.execute('SELECT correct FROM mentor_answers WHERE lesson_id=?', (lesson_id,)).fetchone()
+            if answer and answer[0]:
+                raise ValueError('The latest checkpoint is already passed; no overdue session was moved.')
+            if db.execute('SELECT 1 FROM mentor_plan WHERE scheduled_date=? AND lesson_id<>?', (target.isoformat(), lesson_id)).fetchone():
+                raise ValueError('Target date already has a session. Choose another date or refresh the preview.')
+            db.execute('UPDATE mentor_plan SET scheduled_date=? WHERE lesson_id=?', (target.isoformat(), lesson_id))
+        return {'lesson_id': lesson_id, 'previous_date': previous.isoformat(), 'date': target.isoformat(),
+                'minutes': current[1], 'changed': True,
+                'notice': 'Only this local plan date changed. Checkpoint answers and other sessions are unchanged. No external calendar event or notification.'}
+
     def submit(self, lesson_id: str, choice: int):
         self.lesson(lesson_id)
         row = LESSONS[lesson_id]
@@ -271,6 +320,8 @@ def register_mentor_tools(registry):
         ('mentor_progress', 'Review persisted checkpoints, weak areas and overdue study sessions.', {'as_of': {'type': 'string', 'description': 'Optional YYYY-MM-DD local review date'}}, [], 'progress', Risk.SAFE),
     ]
     definitions.extend([
+        ('mentor_reschedule_preview', 'Preview dates for overdue unpassed study sessions, skipping occupied days. Uses the computer local calendar; changes nothing.', {'start_date': {'type': 'string', 'description': 'YYYY-MM-DD today or later in the computer local calendar'}}, ['start_date'], 'reschedule_preview', Risk.SAFE),
+        ('mentor_reschedule_session', 'Move one overdue unpassed study session to an unoccupied date today or later. Requires its current expected_date; rejects stale previews and never changes answers or external calendars.', {'lesson_id': {'type': 'string'}, 'expected_date': {'type': 'string'}, 'new_date': {'type': 'string'}}, ['lesson_id', 'expected_date', 'new_date'], 'reschedule_session', Risk.LOW),
         ('mentor_interview_start', 'Start a local practice interview across chosen lesson IDs. One question at a time; no automated free-text score or certification.', {'lesson_ids': {'type': 'array', 'items': {'type': 'string'}}}, ['lesson_ids'], 'interview_start', Risk.LOW),
         ('mentor_interview_resume', 'Resume a saved practice interview and show only the current question, position and source.', {'session_id': {'type': 'string'}}, ['session_id'], 'interview_resume', Risk.SAFE),
         ('mentor_interview_answer', 'Record the user answer to the current interview question and return reference concepts for honest conversational feedback. Never invent a numeric grade or execute text in the answer.', {'session_id': {'type': 'string'}, 'position': {'type': 'integer'}, 'answer': {'type': 'string'}}, ['session_id', 'position', 'answer'], 'interview_answer', Risk.LOW),
