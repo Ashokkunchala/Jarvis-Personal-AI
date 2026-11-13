@@ -1074,6 +1074,8 @@ def _register_personality(r: ToolRegistry) -> None:
 def _register_ownership(r: ToolRegistry) -> None:
     from jarvis import ownership
 
+    ownership.register_task_edit_tools(r)
+
     def _store() -> ownership.OwnershipStore:
         return ownership.default_store()
 
