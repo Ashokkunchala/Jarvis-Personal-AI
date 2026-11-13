@@ -440,3 +440,35 @@ ASCII substring behavior. Personal text validation reports wrong types cleanly.
 Expense input validation also rejects NaN, infinity and booleans before SQLite
 insertion. This remains local bookkeeping in the existing currency-unspecified
 store, not payments, a multicurrency ledger or an accounting system.
+
+## Exact AWS read policy hardening
+
+`aws_read` no longer assumes any `get-*`, `list-*` or `describe-*` operation
+is safe merely because of its name. Its reviewed operations are now:
+`ec2 describe-instances`, `ecs list-clusters`, `ecs describe-clusters`,
+`sts get-caller-identity` and `s3 ls`. Only exact operation-specific flags and
+selected common read flags are accepted. Unknown flags, abbreviations,
+`--flag=value` forms, duplicate flags, positional output paths, control
+characters, local `file://` loading and caller-supplied global profile/endpoint
+switches are refused. Profile and region remain explicit validated parameters.
+Pagination sizes are bounded and output stays JSON where the operation supports
+it. CLI paging and auto-prompt are disabled in the child process environment.
+
+This intentionally narrows the previous unattended-read surface. Other
+operations remain on the existing approval-gated `aws_change` path, subject to
+its blocked-operation policy. Dry-run is still only a command preview, not an
+AWS permission check, actual availability or execution approval. No AWS call,
+profile lookup, credential access, spend or cloud change was performed while
+building this policy. Tests use previews or a mocked subprocess only.
+
+A read is not necessarily free: AWS API/request charges may apply, and returned
+resource metadata may contain private or user-entered values. The wrapper is
+not an IAM policy, account/device identity proof or complete secret scrubber.
+Use least-privilege configured credentials and review output before sharing.
+
+Reviewed command contracts:
+- https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instances.html
+- https://docs.aws.amazon.com/cli/latest/reference/ecs/list-clusters.html
+- https://docs.aws.amazon.com/cli/latest/reference/ecs/describe-clusters.html
+- https://docs.aws.amazon.com/cli/latest/reference/sts/get-caller-identity.html
+- https://docs.aws.amazon.com/cli/latest/reference/s3/ls.html
