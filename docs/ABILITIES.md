@@ -187,3 +187,31 @@ Reference formats checked against provider documentation:
 - https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API%5FIpPermission.html
 - https://developer.hashicorp.com/terraform/internals/json-format
 - https://docs.aws.amazon.com/cost-management/latest/userguide/manage-ad.html
+
+## Opt-in proactive local checks
+
+`proactive_configure(metric, threshold, enabled=false)` saves a resource rule.
+Metrics are `cpu`, `memory`, `disk` (system volume) and `battery`. New rules
+are disabled. To opt in, ask Jarvis to enable the chosen rule. Enabled rules
+are checked roughly once a minute while the backend is running. Battery
+alerts fire below the chosen percentage when unplugged; other metrics fire
+at or above the threshold. Unknown or unavailable samples are ignored.
+
+`proactive_rules` lists settings. `proactive_alerts` reads the local inbox,
+and `proactive_acknowledge(alert_id)` marks an alert reviewed. Events appear
+on threshold crossings and recovery, not on every poll. Two percentage points
+of hysteresis reduce boundary noise. State persists across backend restarts;
+history keeps the newest 500 events, with the newest 100 shown per read.
+Set `JARVIS_PROACTIVE_DB` to override `~/.jarvis/proactive.db`.
+
+The existing backend scheduler now also checks saved daily briefing jobs
+roughly once a minute. This closes the gap between saving a briefing schedule
+and actually generating it automatically while the backend runs. No briefing
+job is created automatically; the existing briefing schedule/status/cancel
+controls still apply. Generated briefings stay in the personal database.
+
+These checks do not send desktop notifications, phone pushes, messages or
+email; the inbox must be reviewed through Jarvis. They do not stop processes,
+clean disks, change system settings, or continue when the backend is stopped.
+Briefing catch-up follows each saved job's existing policy. Terminal-only
+sessions still need the backend or the manual `jarvis briefing run-due` command.
