@@ -1137,8 +1137,22 @@ def _register_ownership(r: ToolRegistry) -> None:
         risk=Risk.LOW, category="personal",
     ))
     r.register(Tool(
+        name="edit_note",
+        description="Correct a reviewed local note's text/tags, preserving identity and creation time. Exact expected text and tags required to prevent stale overwrites. Does not edit source files or delete notes.",
+        parameters=_obj({
+            "note_id": _int("Positive note ID from search_notes.", 1),
+            "expected_text": _str("Exact current note text from search_notes."),
+            "expected_tags": _str("Exact current normalized tags from search_notes, including empty string."),
+            "text": _str("Optional corrected note text, 1-1000 characters."),
+            "tags": _str("Optional replacement comma-separated tags. Empty string clears tags."),
+        }, ["note_id", "expected_text", "expected_tags"]),
+        handler=_guard(lambda note_id, expected_text, expected_tags, text=None, tags=None:
+                       {"note": _personal().edit_note(note_id, expected_text, expected_tags, text, tags)}),
+        risk=Risk.LOW, category="personal",
+    ))
+    r.register(Tool(
         name="search_notes",
-        description="Search the user's saved notes by text or tag. Empty query lists the newest.",
+        description="Search saved notes by literal text or tag substring, not SQL wildcard patterns. Empty query lists the newest.",
         parameters=_obj({"query": _str("Text or tag to look for."), "limit": _int("How many to return.", 1, 100)}),
         handler=_guard(lambda query="", limit=20: {"notes": _personal().search_notes(query, limit)}),
         risk=Risk.SAFE, category="personal",
