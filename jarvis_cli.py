@@ -48,8 +48,12 @@ def _default_entry(
         raise typer.Exit(code=run(laptop=not no_laptop, start_call=call))
 android_app = typer.Typer(help="Control a connected Android phone over ADB.", no_args_is_help=True)
 laptop_app = typer.Typer(help="Control this Windows laptop.", no_args_is_help=True)
+briefing_app = typer.Typer(help="Scheduled daily briefings (local data only).", no_args_is_help=True)
+memory_app = typer.Typer(help="Local document memory over your notes (read-only).", no_args_is_help=True)
 app.add_typer(android_app, name="android")
 app.add_typer(laptop_app, name="laptop")
+app.add_typer(briefing_app, name="briefing")
+app.add_typer(memory_app, name="memory")
 
 console = Console()
 err_console = Console(stderr=True)
@@ -901,6 +905,142 @@ def android_pull(remote: str, local: str):
 def android_push(local: str, remote: str):
     """Copy a file onto the phone."""
     _emit(_lazy_android().push_file(local, remote), f"pushed {local} -> {remote}")
+
+
+
+# ---------------------------------------------------------------------------
+# doctor, briefing and memory
+# ---------------------------------------------------------------------------
+@app.command()
+def doctor():
+    """Check the whole local stack: model key, voice, audio, Android, storage, scheduler."""
+    from jarvis.doctor import run_checks
+
+    report = run_checks()
+    rows = []
+    for check in report.checks:
+        mark = "[green]ok[/green]" if check.ok else ("[red]FAIL[/red]" if check.critical else "[yellow]warn[/yellow]")
+        rows.append([check.name, mark, check.detail])
+    console.print(_table("JARVIS doctor", ["check", "status", "detail"], rows))
+    if not report.ok:
+        err_console.print("[red]Some critical checks failed - fix the FAIL rows above.[/red]")
+        raise typer.Exit(code=1)
+
+
+def _lazy_scheduler():
+    from jarvis import ownership
+    from jarvis.briefing_schedule import BriefingScheduler
+
+    return BriefingScheduler(ownership=ownership.default_store())
+
+
+@briefing_app.command("now")
+def briefing_now():
+    """Show today's briefing right now."""
+    scheduler = _lazy_scheduler()
+    latest = scheduler.latest()
+    console.print(scheduler.store.briefing(scheduler.ownership.list() if scheduler.ownership else [])["summary"])
+    if latest:
+        console.print(f"[dim]last scheduled run: {latest['ran_at']} ({latest['status']})[/dim]")
+
+
+@briefing_app.command("schedule")
+def briefing_schedule(
+    at: str = typer.Option("07:30", "--at", help="Local time, 24-hour HH:MM."),
+    tz: str = typer.Option("", "--tz", help="IANA timezone like Asia/Calcutta; empty = system."),
+    name: str = typer.Option("daily", "--name", help="Schedule name."),
+):
+    """Schedule the daily briefing. Persistent, survives restarts, never sends anything."""
+    try:
+        job = _lazy_scheduler().set_daily(name, at, tz)
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]ok[/green] {job['name']}: daily at {job['time_of_day']} ({job['timezone']})")
+    console.print(_lazy_scheduler().next_run_text(name))
+
+
+@briefing_app.command("status")
+def briefing_status():
+    """Show briefing schedules, next runs and history."""
+    scheduler = _lazy_scheduler()
+    status = scheduler.status()
+    if not status["jobs"]:
+        console.print("No briefing scheduled - run: jarvis briefing schedule")
+    for line in status["next"] or ["all schedules disabled"]:
+        console.print(line)
+    for row in scheduler.history(limit=7):
+        console.print(f"[dim]{row['local_date']} {row['status']}: {row['summary'][:100]}[/dim]")
+
+
+@briefing_app.command("cancel")
+def briefing_cancel(name: str = typer.Option("daily", "--name")):
+    """Cancel a scheduled briefing (history is kept)."""
+    try:
+        _lazy_scheduler().cancel(name)
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]ok[/green] cancelled {name}")
+
+
+@briefing_app.command("run-due")
+def briefing_run_due():
+    """Generate any briefings whose scheduled time has passed (call on startup / hourly)."""
+    outcomes = _lazy_scheduler().run_due()
+    if not outcomes:
+        console.print("nothing due")
+    for outcome in outcomes:
+        console.print(f"{outcome['name']}: {outcome['status']}")
+        if outcome["summary"]:
+            console.print(outcome["summary"])
+
+
+def _lazy_memory():
+    from jarvis.memory.doc_memory import DocMemory
+
+    return DocMemory()
+
+
+@memory_app.command("add")
+def memory_add(folder: str):
+    """Opt a notes/docs folder into local memory (read-only indexing)."""
+    try:
+        result = _lazy_memory().add_root(folder)
+    except (ValueError, RuntimeError) as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]ok[/green] indexed {result['added']} docs from {result['root']}")
+
+
+@memory_app.command("search")
+def memory_search(query: str, limit: int = 5):
+    """Search indexed notes; every result shows its source file and line."""
+    result = _lazy_memory().search(query, limit)
+    if not result["results"]:
+        console.print("no matches - add folders with: jarvis memory add <folder>")
+    for hit in result["results"]:
+        console.print(f"[cyan]{hit['citation']}[/cyan]  {hit['title']}")
+        console.print(f"  {hit['snippet']}")
+
+
+@memory_app.command("list")
+def memory_list():
+    """List folders opted into memory."""
+    rows = [[r["path"], str(r["docs"])] for r in _lazy_memory().list_roots()]
+    console.print(_table("Indexed folders", ["folder", "docs"], rows) if rows else "nothing indexed yet")
+
+
+@memory_app.command("reindex")
+def memory_reindex():
+    """Re-scan indexed folders for new, changed or deleted notes."""
+    console.print(_lazy_memory().reindex())
+
+
+@memory_app.command("forget")
+def memory_forget(folder: str):
+    """Remove a folder from memory (files are never touched)."""
+    console.print(_lazy_memory().remove_root(folder))
 
 
 if __name__ == "__main__":
