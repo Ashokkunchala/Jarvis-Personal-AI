@@ -192,6 +192,9 @@ def build_registry(force: bool = False) -> ToolRegistry:
     from jarvis.memory.controls import register_memory_controls
 
     register_memory_controls(registry)
+    from jarvis.wellness import register_wellness_tools
+
+    register_wellness_tools(registry)
 
     build_registry._instance = registry  # type: ignore[attr-defined]
     logger.info("Registered %d tools across %d categories", len(registry), len(registry.categories()))
