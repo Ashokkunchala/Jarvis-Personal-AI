@@ -371,3 +371,23 @@ not add retention support to the separate enhanced-store implementation.
 Mode-selection tool schemas and brain guidance now discover all supported modes,
 instead of advertising only the original five. Application prompt guidance no
 longer claims blanket laptop/phone access and requires actual tool evidence.
+
+## Saved-memory correction and literal duplicate review
+
+`memory_correct_saved(memory_id, expected_text, new_text)` changes one saved
+backend fact only when its current text exactly matches the reviewed text.
+This prevents a concurrent correction from being silently overwritten. It
+preserves the ID, category, creation time and expiry; correcting an expired
+memory does not reactivate it. It does not change other potentially conflicting
+records, prior model context, document sources, exports or backups. A no-op,
+missing record or stale expected text is rejected. Corrections use the existing
+LOW-risk local-mutation boundary and are blocked by the emergency stop.
+
+`memory_review_duplicates(include_expired=false)` returns ID groups for text
+that becomes identical after case-folding and whitespace normalization within
+the same exact category. It reviews at most the newest 1000 eligible records
+and flags truncation. No merge, deletion, truth decision or semantic conflict
+inference is made. Normalization can remove distinctions that matter in code,
+so review each record before deciding what to change. The report contains IDs
+and category labels, not copied fact text. Expired records are excluded unless
+explicitly requested. These tools cover only the existing backend memory store.
