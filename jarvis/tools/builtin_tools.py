@@ -186,6 +186,9 @@ def build_registry(force: bool = False) -> ToolRegistry:
     from jarvis.devops.evidence import register_evidence_tools
 
     register_evidence_tools(registry)
+    from jarvis.proactive import register_proactive_tools
+
+    register_proactive_tools(registry)
 
     build_registry._instance = registry  # type: ignore[attr-defined]
     logger.info("Registered %d tools across %d categories", len(registry), len(registry.categories()))
