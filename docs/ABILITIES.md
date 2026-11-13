@@ -514,3 +514,31 @@ change occurs. The existing store has no per-entry currency metadata and uses
 rounded numeric amounts, not a multicurrency or audited accounting ledger.
 Do not combine different currencies or treat these summaries as financial
 statements. Original corrected values are not kept in a separate history table.
+
+## Explicit-selection local document backups
+
+`preview_document_backup(files, destination)` reads 1-50 explicitly selected
+local document/source files (1 MB each, 10 MB total), returning paths, sizes,
+SHA-256 hashes and an exact manifest token. It creates nothing. Review this
+selection and request `create_document_backup(files, destination,
+expected_manifest)` through the existing explicit-confirmation boundary. The
+creation step rereads and matches the selection/content/destination, builds
+and CRC-checks a ZIP in memory, then exclusively creates a new .zip file in an
+existing directory. It never overwrites a destination, alters sources, recurses
+folders, uploads, rotates/deletes backups or restores/extracts anything.
+
+Numbered ZIP member names prevent basename collisions or path traversal; the
+manifest maps them to source paths and hashes. Symlink/reparse paths, special
+files, duplicate selections, unsupported formats, secret-shaped filenames and
+private-key-shaped content are refused. Secret checks are heuristics, not a
+complete detector. Do not select credentials or sensitive documents. The ZIP
+is NOT encrypted and includes absolute source paths. Filesystem tampering and
+concurrent path swaps are not fully prevented; use a trusted local directory.
+This is a byte snapshot, not an application-consistent database backup,
+off-device disaster recovery or tested restore. A failed disk write can leave
+a partial destination, which is reported rather than silently deleted.
+
+No real user files were backed up during development. Tests use disposable
+fixtures only. API behavior checked against:
+- https://docs.python.org/3.11/library/zipfile.html
+- https://docs.python.org/3.11/library/hashlib.html
