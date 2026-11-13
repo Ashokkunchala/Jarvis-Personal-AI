@@ -956,12 +956,13 @@ def _register_devops(r: ToolRegistry) -> None:
     r.register(Tool(
         name="aws_read",
         description=(
-            "Run a read-only AWS CLI call (describe-*, list-*, get-*, s3 ls) with the user's configured profile. "
-            "Refuses anything that changes state, returns secrets, or is billed per request."
+            "Run an exact allowlisted AWS CLI read: ec2 describe-instances; ecs list-clusters or describe-clusters; "
+            "sts get-caller-identity; s3 ls. Only reviewed flags are accepted. Other calls need aws_change approval. "
+            "Uses configured credentials; AWS request charges may apply. Resource metadata can contain private data."
         ),
         parameters=_obj(
             {
-                "service": _str("AWS CLI service, e.g. ecs, ec2, logs."),
+                "service": _str("Reviewed service: ec2, ecs, sts or s3."),
                 "operation": _str("Operation, e.g. describe-clusters."),
                 "args": _array("Extra CLI arguments, e.g. ['--cluster','prod'].", {"type": "string"}),
                 "profile": _str("Optional AWS profile name."),
