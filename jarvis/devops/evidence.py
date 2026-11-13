@@ -170,10 +170,12 @@ def review_terraform_plan_export(path: str):
 
 
 def register_evidence_tools(registry):
+    from jarvis.devops.dependency_audit import register_audit_tools
     from jarvis.devops.kubernetes_snapshot import review_pods_export
     from jarvis.devops.slo import register_slo_tools
 
     register_slo_tools(registry)
+    register_audit_tools(registry)
     from jarvis.tools.registry import Risk, Tool
 
     definitions = [
