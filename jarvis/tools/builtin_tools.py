@@ -180,6 +180,9 @@ def build_registry(force: bool = False) -> ToolRegistry:
     _register_android_comms(registry)
     _register_android_system(registry)
     _register_personal_assistant(registry)
+    from jarvis.mentor import register_mentor_tools
+
+    register_mentor_tools(registry)
 
     build_registry._instance = registry  # type: ignore[attr-defined]
     logger.info("Registered %d tools across %d categories", len(registry), len(registry.categories()))
