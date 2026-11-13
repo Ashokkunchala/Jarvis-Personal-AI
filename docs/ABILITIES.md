@@ -472,3 +472,25 @@ Reviewed command contracts:
 - https://docs.aws.amazon.com/cli/latest/reference/ecs/describe-clusters.html
 - https://docs.aws.amazon.com/cli/latest/reference/sts/get-caller-identity.html
 - https://docs.aws.amazon.com/cli/latest/reference/s3/ls.html
+
+## Offline SLO and error-budget review
+
+`review_slo_budget(windows, target_percent, complete_window, event_definition)`
+calculates an event-ratio SLI, objective result, allowed/remaining bad events
+and budget consumed from supplied good/total counts. Counts are summed before
+calculating the ratio, never averaged from per-window percentages. An explicit
+population/good-event definition and `complete_window=true` are required.
+Windows must have timezone-qualified boundaries, be finished and exactly
+contiguous, without gaps/overlaps/duplicates. At most 1000 windows are accepted.
+
+Decimal arithmetic and exact count comparisons keep objective decisions
+independent of rounded percentages. Zero traffic is `no_data`, not 100%
+success. A 100% target has zero budget and undefined consumption percentage.
+Fractional allowed events remain a mathematical budget, not permission for a
+fractional failure. A negative remainder and consumption above 100% can show
+budget overrun rather than being silently clipped.
+
+Inputs are caller-supplied evidence, not verified monitoring. This is not a
+contractual SLA conclusion, time-based uptime calculation, forecast, burn-rate
+alert, live metric query or root-cause analysis. No notification, network call,
+account access or remediation occurs. Source: https://sre.google/workbook/implementing-slos/
