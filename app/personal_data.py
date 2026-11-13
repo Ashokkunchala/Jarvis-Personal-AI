@@ -69,6 +69,8 @@ def _connect():
         created_at TEXT NOT NULL
       );
     """)
+    if 'expires_at' not in {row[1] for row in conn.execute('PRAGMA table_info(memories)')}:
+        conn.execute('ALTER TABLE memories ADD COLUMN expires_at TEXT')
     reminder_columns = {row[1] for row in conn.execute("PRAGMA table_info(reminders)")}
     if "recurrence" not in reminder_columns:
         conn.execute("ALTER TABLE reminders ADD COLUMN recurrence TEXT NOT NULL DEFAULT 'none'")
@@ -100,7 +102,8 @@ def get_memory_context() -> str:
     """Return a bounded set of explicitly saved user memories for chat personalization."""
     with _connect() as db:
         rows = db.execute(
-            "SELECT text, category FROM memories ORDER BY id DESC LIMIT 20"
+            "SELECT text, category FROM memories WHERE expires_at IS NULL OR julianday(expires_at)>julianday(?) ORDER BY id DESC LIMIT 20",
+            (_now(),),
         ).fetchall()
     if not rows:
         return ""
@@ -127,6 +130,21 @@ def _now():
 class MemoryCreate(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     category: str = Field(default="general", min_length=1, max_length=40)
+    expires_at: datetime | None = None
+
+    @field_validator('text', 'category')
+    @classmethod
+    def memory_not_blank(cls, value: str):
+        if not value.strip():
+            raise ValueError('Memory text and category cannot be blank.')
+        return value.strip()
+
+    @field_validator('expires_at')
+    @classmethod
+    def memory_expiry_timezone(cls, value):
+        if value is not None and value.tzinfo is None:
+            raise ValueError('expires_at requires a timezone.')
+        return value.astimezone(UTC) if value is not None else None
 
 
 class ReminderCreate(BaseModel):
@@ -219,17 +237,19 @@ class ScheduledRunToggle(BaseModel):
 
 
 @router.get("/memories", dependencies=[Depends(require_device_token)])
-def list_memories():
-    with _connect() as db:
-        rows = db.execute("SELECT * FROM memories ORDER BY id DESC LIMIT 500").fetchall()
-    return {"items": [dict(row) for row in rows]}
+def list_memories(query: str = '', category: str = '', include_expired: bool = True):
+    from jarvis.memory.controls import search_memories
+    try:
+        return {'items': search_memories(query, category, include_expired)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/memories", status_code=201, dependencies=[Depends(require_device_token)])
 def create_memory(item: MemoryCreate):
     with _connect() as db:
-        cur = db.execute("INSERT INTO memories(text,category,created_at) VALUES(?,?,?)",
-                         (item.text.strip(), item.category.strip(), _now()))
+        cur = db.execute("INSERT INTO memories(text,category,created_at,expires_at) VALUES(?,?,?,?)",
+                         (item.text.strip(), item.category.strip(), _now(), item.expires_at.isoformat() if item.expires_at else None))
         row = db.execute("SELECT * FROM memories WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
 
@@ -243,6 +263,9 @@ def update_memory(memory_id: int, item: MemoryCreate):
         )
         if not cur.rowcount:
             raise HTTPException(status_code=404, detail="Memory not found.")
+        if 'expires_at' in item.model_fields_set:
+            db.execute('UPDATE memories SET expires_at=? WHERE id=?',
+                       (item.expires_at.isoformat() if item.expires_at else None, memory_id))
         row = db.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone()
     return dict(row)
 
