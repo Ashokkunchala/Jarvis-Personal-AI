@@ -54,3 +54,10 @@ def test_emergency_mode_makes_no_dispatch_or_tool_access_claim():
     assert 'contacting local emergency services' in overlay
     assert 'never bypass approvals' in overlay
     assert 'do not imply monitoring' in overlay
+
+
+def test_mode_tool_schema_advertises_every_supported_mode():
+    from jarvis.tools.builtin_tools import build_registry
+    registry = build_registry(force=True)
+    tool = registry.get('set_personality_mode')
+    assert set(tool.parameters['properties']['mode']['enum']) == set(MODES)
