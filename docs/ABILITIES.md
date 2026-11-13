@@ -230,3 +230,29 @@ comparisons now use actual instants rather than comparing timezone-offset string
 Existing ambiguous dates stay visible with a warning and are not treated as
 reliable follow-ups until corrected. No external calendar, notification or
 message is created by editing a commitment.
+
+## Saved-memory search and retention controls
+
+`memory_search_saved(query?, category?, include_expired=false)` searches the
+existing backend personal-memory store using literal text and exact category.
+It is separate from the existing `memory_search` document-index tool, which
+keeps its citations and folder controls. This is not vector/semantic search.
+
+`memory_set_expiry(memory_id, expires_at?)` sets a timezone-qualified expiry;
+omitting the expiry removes it. Expired rows are excluded from future backend
+chat context and normal saved-memory search. Existing memories have no expiry
+until the user sets one. Editing text through the API preserves expiry unless
+an explicit new expiry or null is supplied.
+
+`memory_retention_status` shows expired IDs/counts. `memory_purge_expired`
+requires explicit confirmation and deletes only expired rows. Expiration alone
+does not erase storage: review APIs and exports still contain expired rows
+until purged. Purging is not secure disk erasure and does not change backups,
+exports, previous messages or document indexes. Already-sent model context
+cannot be recalled. No expiry or purge is scheduled automatically.
+
+The authenticated existing memory API accepts `expires_at` on creation/update
+and literal `query`, `category`, and `include_expired` filters on listing.
+The web review list still includes expired rows by default so users can correct
+or delete them. These controls cover the backend personal-memory store, not
+a separate CLI conversation-history store.
