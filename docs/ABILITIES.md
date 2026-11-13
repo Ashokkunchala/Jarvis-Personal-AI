@@ -342,3 +342,21 @@ At most 10000 recent rows per source and 100 groups per breakdown are reviewed;
 truncation is flagged. Missing stores/tables are flagged and not created or
 migrated. Package installation now includes tzdata, matching requirements.txt,
 so IANA timezone data is available on Windows too. No real-device test claimed.
+
+
+## Review and reschedule overdue learning sessions
+
+`mentor_reschedule_preview(start_date)` proposes new one-topic-per-day dates
+for overdue sessions whose latest starter checkpoint is not passed, skipping
+other occupied plan dates. Previewing never changes a saved date.
+`mentor_reschedule_session(lesson_id, expected_date, new_date)` applies one
+chosen proposal, preserving its duration and all answers/other sessions. It
+rejects changed plans, replayed proposals, newly passed checkpoints, occupied
+dates and past destinations. Concurrent moves cannot claim the same target
+date through this operation.
+
+Dates use the computer's local calendar, matching the existing study plan.
+Overdue means an unpassed scheduled checkpoint, not evidence that the user
+did no studying. Neither operation creates external calendar events, sends
+notifications, changes interview progress or enables automatic rescheduling.
+Re-check the preview when the plan or checkpoint results change.
