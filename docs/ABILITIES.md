@@ -120,7 +120,7 @@ cloud, AI intelligence) and quick actions. Navigation: Home, Voice,
 Personal life, Friend, Learning, DevOps, Developer tools, AWS cloud,
 Laptop control, Mobile control, Automation, Memory, Security, Settings.
 
-## Architecture decisions (approved)
+## Architecture proposals (deployment still needs approval)
 - Deployment: hybrid - local agents + cloud AI
 - Autonomy: automatic safe tasks; approval for sensitive actions
 - Voice: Indian English + Telugu
@@ -128,3 +128,30 @@ Laptop control, Mobile control, Automation, Memory, Security, Settings.
 - Milestones: P0 stabilise -> P1 security/approval -> P2 orchestrator ->
   P3 personal + friend -> P4 mentor -> P5 DevOps agent ->
   P6 Windows + Android integration -> P7 hybrid hardening
+
+
+## Implemented foundation
+
+See [Local execution safety](EXECUTION-SAFETY.md) for invocation-bound one-time
+approvals, the persistent emergency stop and redacted audit controls in the
+existing tool registry. Remote actor/device authorization is not implemented.
+
+## Offline mentor starter engine
+
+The existing brain/CLI/TUI tool registry includes six mentor tools:
+`mentor_catalog`, `mentor_lesson`, `mentor_quiz`, `mentor_submit`,
+`mentor_plan` and `mentor_progress`. Ask Jarvis to list mentor lessons, then
+choose the lesson IDs and a local YYYY-MM-DD start date for a study plan.
+
+Each of the twelve domains has one introductory lesson, a manual practice
+exercise and an objective multiple-choice checkpoint with feedback. Plans
+save one topic per day for a chosen 10-120 minute study period. Progress
+survives restart, tracks the latest checkpoint result and attempt count,
+and lists weak areas and overdue unpassed sessions. Replanning updates the
+selected topics without deleting other sessions.
+
+Data stays in `~/.jarvis/mentor.db` (override with `JARVIS_MENTOR_DB`). No lab
+commands are executed, no calendar event is created, and no notification is
+sent. These are starter checkpoints, not complete courses, coding evaluation,
+certification preparation or evidence of mastery. Advanced lessons, coding
+sandboxes, mock interviews and proactive learning reminders remain to build.
