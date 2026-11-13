@@ -256,3 +256,22 @@ and literal `query`, `category`, and `include_expired` filters on listing.
 The web review list still includes expired rows by default so users can correct
 or delete them. These controls cover the backend personal-memory store, not
 a separate CLI conversation-history store.
+
+## Resumable mock-interview practice
+
+`mentor_interview_start(lesson_ids)` creates a local practice session of 1-12
+chosen topics. `mentor_interview_resume(session_id)` shows the current question.
+`mentor_interview_answer(session_id, position, answer)` records the user's answer
+and returns reference concepts, a manual practice task and a source link for
+conversational feedback. `mentor_interview_history` reviews saved answers.
+Sessions survive restart. Stale/replayed/out-of-order answers are rejected,
+including concurrent submissions to the same question.
+
+Every starter lesson, quiz and interview topic now carries a checked technical
+reference link. Interview prompts go beyond the multiple-choice checkpoints
+by asking for reasoning, tradeoffs, verification and safe operational boundaries.
+There is one scenario per domain. This is practice, not a hiring assessment or
+certification exam. Free-text answers are not automatically graded: the tool
+returns reference concepts for honest discussion rather than inventing a score.
+Answers stay in the local mentor database; do not include credentials. No answer
+text or practice command is executed. No recording or microphone capture is added.
