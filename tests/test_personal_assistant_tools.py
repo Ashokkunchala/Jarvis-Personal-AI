@@ -61,12 +61,27 @@ def test_memory_and_briefing_tools_roundtrip(registry, tmp_path):
     assert forgotten["success"] and forgotten["forgotten_docs"] == 1
 
 
-def test_speak_text_fails_cleanly_without_backends(registry):
-    # No pyttsx3 in the test venv: the tool explains instead of crashing.
+def test_speak_text_fails_cleanly_without_backends(registry, monkeypatch):
+    # Whatever the machine has installed, an unavailable backend must produce
+    # a clean explanation, never a crash or a leaked secret.
+    from jarvis.core.voice import speech
+
+    class Broken(speech.TTSBackend):
+        name = "broken"
+
+        def available(self):
+            return ""
+
+        def synthesize(self, text, *, cancel=None):
+            raise speech.SpeechError("no audio device")
+
+    monkeypatch.setattr(
+        speech.SpeechEngine, "from_env", classmethod(lambda cls, env=None: speech.SpeechEngine([Broken()]))
+    )
     result = registry.get("speak_text").handler(text="hello")
     assert result["success"] is True  # guard caught the SpeechError
     assert result["spoken"] is False
-    assert "pyttsx3" in result["error"]
+    assert "no audio device" in result["error"]
 
 
 def test_bad_briefing_time_is_a_clean_error(registry):
