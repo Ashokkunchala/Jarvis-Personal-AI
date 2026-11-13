@@ -57,10 +57,18 @@ class FakePyttsx:
 
 
 # ------------------------------------------------------------------ local
-def test_local_backend_reports_missing_pyttsx3():
+def test_local_backend_reports_missing_pyttsx3(monkeypatch):
+    # Simulate pyttsx3 not being installed regardless of the test environment.
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *a, **k: None if name == "pyttsx3" else real_find_spec(name, *a, **k),
+    )
     backend = LocalTTSBackend()
     reason = backend.available()
-    # In the test venv pyttsx3 is not installed, so it must explain, not crash.
     assert "pyttsx3" in reason
     with pytest.raises(SpeechError, match="unavailable"):
         backend.synthesize("hello")
