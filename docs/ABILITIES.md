@@ -391,3 +391,34 @@ inference is made. Normalization can remove distinctions that matter in code,
 so review each record before deciding what to change. The report contains IDs
 and category labels, not copied fact text. Expired records are excluded unless
 explicitly requested. These tools cover only the existing backend memory store.
+
+## Guided practice projects with self-reported evidence journals
+
+Six `mentor_project_*` tools expose four local manual projects: a Python 3.11
+SQLite ledger, React task board, Kubernetes probe-design review and fictional
+trace-based incident review. `mentor_project_catalog` lists IDs;
+`mentor_project_brief(project_id)` returns prerequisites, safety scope, three
+progressive milestones, deliverables, review checks and a technical source.
+These are practice briefs, not executed labs, sandboxes or complete courses.
+
+`mentor_project_start` saves a snapshot of the chosen brief in the existing
+mentor database. `mentor_project_resume` shows the current milestone;
+`mentor_project_submit(session_id, position, evidence)` records a 1-4000
+character user-written evidence summary. `mentor_project_history` reviews it.
+Stale, replayed, out-of-order and concurrent duplicate submissions are rejected.
+Sessions survive restart and keep their starting brief if the catalog changes.
+Existing quizzes, study plans and interview progress are unchanged.
+
+Submissions are self-reported, not verified or automatically graded. After all
+three submissions the state is `all_evidence_submitted`, never a claim of
+correctness, completion, mastery or certification. No code runs, evidence path
+or URL opens, cloud/cluster connection occurs or credential is needed. Keep
+secrets and private data out of evidence summaries. Changes use the existing
+local tool boundary and emergency stop. Database growth and project retention
+are not separately managed by the backend-memory expiry controls.
+
+Sources checked for these practice briefs:
+- https://docs.python.org/3.11/library/sqlite3.html
+- https://react.dev/learn/updating-arrays-in-state
+- https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+- https://opentelemetry.io/docs/concepts/signals/traces/
