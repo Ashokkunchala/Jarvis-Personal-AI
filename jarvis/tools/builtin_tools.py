@@ -1040,7 +1040,7 @@ def _register_personality(r: ToolRegistry) -> None:
 
     r.register(Tool(
         name="list_personality_modes",
-        description="List the conversation styles JARVIS can adopt (assistant, friend, teacher, storyteller, health guide).",
+        description="List all available conversation styles and specialist operating modes. Modes never change permissions or approval gates.",
         parameters=_obj({}),
         handler=lambda: {"success": True, "modes": personality_modes.list_modes()},
         risk=Risk.SAFE, category="personality",
@@ -1054,11 +1054,10 @@ def _register_personality(r: ToolRegistry) -> None:
     ))
     r.register(Tool(
         name="set_personality_mode",
-        description="Switch the conversation style: 'assistant' (default), 'friend', 'teacher', 'storyteller' or "
-                    "'doctor' (general health information only, never a substitute for a real doctor). "
-                    "Switch when the user asks ('be my friend', 'teach me', 'tell me a story') and return to "
-                    "'assistant' when the moment passes.",
-        parameters=_obj({"mode": _str("One of: assistant, friend, teacher, storyteller, doctor.")}, ["mode"]),
+        description="Switch to a listed conversation style or specialist operating mode when the user asks. "
+                    "Specialist modes guide discussion, not execution privileges. Emergency mode cannot "
+                    "dispatch help; fitness and doctor modes provide general information, not medical care.",
+        parameters=_obj({"mode": _str("Choose a mode key from list_personality_modes.", enum=list(personality_modes.MODES))}, ["mode"]),
         handler=_set_mode,
         risk=Risk.LOW, category="personality",
     ))
