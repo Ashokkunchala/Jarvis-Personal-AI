@@ -78,7 +78,7 @@ def test_registered_tools_run_through_existing_execution_boundary(tmp_path, monk
     monkeypatch.setenv('JARVIS_SECURITY_DB', str(tmp_path / 'security.db'))
     registry = build_registry(force=True)
     async def run():
-        assert len(registry.names('mentor')) == 6
+        assert len(registry.names('mentor')) == 10
         catalog = await registry.execute('mentor_catalog')
         assert catalog.ok and len(catalog.data['data']) == 12
         assert (await registry.execute('mentor_plan', {'lesson_ids': ['linux'], 'start_date': '2026-11-15'})).ok
