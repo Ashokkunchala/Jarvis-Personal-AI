@@ -170,8 +170,12 @@ def review_terraform_plan_export(path: str):
 
 
 def register_evidence_tools(registry):
+    from jarvis.devops.kubernetes_snapshot import review_pods_export
     from jarvis.tools.registry import Risk, Tool
+
     definitions = [
+        ('review_kubernetes_pods', 'Review a local Kubernetes Pod/PodList JSON snapshot for readiness, restart, image-pull and termination signals. Offline triage only; no cluster access or changes.', review_pods_export,
+         {'path': {'type': 'string', 'description': 'Local core v1 Pod/PodList JSON, max 2 MB and 500 Pods. Do not paste spec, credentials or logs into chat.'}, 'restart_threshold': {'type': 'integer', 'minimum': 1, 'maximum': 10000}}, ['path']),
         ('review_security_groups', 'Review supplied AWS describe-security-groups JSON for explicit public ingress. Offline; no account access or changes.', review_security_groups_export,
          {'path': {'type': 'string', 'description': 'Local .json export containing a SecurityGroups list, max 2 MB'}}, ['path']),
         ('review_terraform_plan', 'Summarize supplied Terraform plan JSON deletions and replacements without returning sensitive attribute values. Does not execute Terraform.', review_terraform_plan_export,
