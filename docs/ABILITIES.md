@@ -320,3 +320,25 @@ health, node/service/controller analysis, or a security audit. No credentials,
 cluster connection, deploy, scale, restart or other mutation is performed.
 
 Reference checked: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/
+
+## Weekly wellness record review
+
+`weekly_wellness_review(start_day, timezone)` reviews seven calendar days from
+an explicit YYYY-MM-DD date in an IANA timezone (for example Asia/Kolkata).
+It reads existing local habit logs and backend workout records, without
+creating another tracker. Habit results show logged dates and unlogged dates;
+workout results show session/minute totals by activity and day. A partial
+current week is clipped at now. Future workout times, malformed records and
+naive workout timestamps are excluded with counts. Timestamped workouts use
+the requested timezone, including DST transitions. Habits keep their original
+logged calendar dates rather than pretending to have timestamp precision.
+
+Unlogged is not missed, and no record is not evidence of inactivity. No goal
+frequency, fitness score, diagnosis, medical advice, wearable/sleep/nutrition
+data, notification or automatic plan is inferred. Workout notes and individual
+timestamps are not returned. Habit names and activity labels are user-provided
+data. Source reads are separate rather than an atomic cross-store snapshot.
+At most 10000 recent rows per source and 100 groups per breakdown are reviewed;
+truncation is flagged. Missing stores/tables are flagged and not created or
+migrated. Package installation now includes tzdata, matching requirements.txt,
+so IANA timezone data is available on Windows too. No real-device test claimed.
