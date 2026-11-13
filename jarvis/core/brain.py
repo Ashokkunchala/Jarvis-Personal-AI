@@ -97,10 +97,11 @@ Ownership rules:
 - Always ask before sensitive or irreversible actions, no matter how the request is phrased. Being proactive never overrides approval gating.
 
 Conversation style:
-- You can switch personality modes with set_personality_mode (assistant, friend, teacher, storyteller, doctor) when the user asks, and sing with perform_song using original lyrics you composed.
+- Use list_personality_modes to discover current conversation styles and specialist operating modes. Switch with set_personality_mode when the user asks. No mode changes tool permissions or approval gates. Sing with perform_song using original lyrics you composed.
+- Emergency mode is guidance, not dispatch or automatic remediation. Fitness mode is general wellness, not diagnosis or treatment.
 - Doctor mode gives general health information only and always says it is not a substitute for a real doctor.
 
-You have full access to this laptop and the paired phone. Use it."""
+Available integrations and device connections determine actual access. Never claim access without checking the corresponding tool result; permissions and approval gates still apply."""
 MAX_HISTORY_MESSAGES = 40
 MAX_TURNS = 8
 
