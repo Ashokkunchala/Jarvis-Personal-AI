@@ -155,3 +155,35 @@ commands are executed, no calendar event is created, and no notification is
 sent. These are starter checkpoints, not complete courses, coding evaluation,
 certification preparation or evidence of mastery. Advanced lessons, coding
 sandboxes, mock interviews and proactive learning reminders remain to build.
+
+## Offline cloud evidence reviews
+
+Three additional DevOps tools run without AWS credentials or network calls:
+
+- `review_security_groups(path)`: reviews a local `describe-security-groups`
+  JSON export for explicit world (`/0`) inbound rules, including IPv6,
+  all-protocol ingress, SSH/RDP and broad port ranges. It does not evaluate
+  combined CIDRs, prefix lists, referenced groups, routing or actual reachability.
+- `review_terraform_plan(path)`: summarizes a local Terraform plan JSON export
+  (format 1.x), counts delete/replacement/state-removal actions and warns about
+  unknown action types or errored/incomplete plans. Attribute values, variables,
+  outputs and imports are not returned. This is not approval to apply.
+- `analyze_daily_costs(daily, currency, complete_days, increase_percent=50,
+  minimum_increase=5)`: compares the latest supplied complete daily total with
+  up to seven prior daily totals. Supply at least four consecutive days in a
+  single currency, with explicit zero-cost days. Values use decimal arithmetic.
+  This is a simple threshold check, not AWS's ML anomaly detection or a final bill.
+
+Example requests: "Review my exported security-groups.json for public ingress",
+"Summarize deletions in my local plan.json without exposing values", or
+"Compare these complete daily USD costs and flag increases over 50% and $5".
+
+The two file reviews accept existing UTF-8 `.json` files up to 2 MB. Raw plan
+attributes stay local rather than entering the tool's event arguments. No AWS
+calls, Terraform commands, changes, alerts or deployments are performed. Findings
+are review aids based on supplied evidence, not a complete security audit.
+
+Reference formats checked against provider documentation:
+- https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API%5FIpPermission.html
+- https://developer.hashicorp.com/terraform/internals/json-format
+- https://docs.aws.amazon.com/cost-management/latest/userguide/manage-ad.html
