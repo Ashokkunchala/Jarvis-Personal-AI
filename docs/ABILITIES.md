@@ -494,3 +494,23 @@ Inputs are caller-supplied evidence, not verified monitoring. This is not a
 contractual SLA conclusion, time-based uptime calculation, forecast, burn-rate
 alert, live metric query or root-cause analysis. No notification, network call,
 account access or remediation occurs. Source: https://sre.google/workbook/implementing-slos/
+
+## Expense review and correction
+
+`list_expenses(month?, limit=50)` reviews manually entered expense rows for a
+strict YYYY-MM month, returning up to 200 rows and a truncation flag. Each row
+includes a revision token. `edit_expense(expense_id, expected_revision, amount?,
+category?, note?, spent_on?)` corrects only a reviewed row if its full record
+still matches that revision. Stale/concurrent edits are rejected atomically,
+so correcting an amount does not create a duplicate entry. Omitted fields
+remain unchanged; an empty note clears the note. Identity and creation time
+are preserved. Existing monthly summaries reflect corrected amounts, categories
+and dates. Monthly review/summary filters now require exact valid YYYY-MM input.
+
+Revision hashes detect changed content, not user identity or authorization.
+These operations use the existing local registry and emergency-stop policy;
+no deletion, payment, bank connection, currency conversion or external account
+change occurs. The existing store has no per-entry currency metadata and uses
+rounded numeric amounts, not a multicurrency or audited accounting ledger.
+Do not combine different currencies or treat these summaries as financial
+statements. Original corrected values are not kept in a separate history table.
