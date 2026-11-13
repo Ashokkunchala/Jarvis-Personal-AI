@@ -183,6 +183,9 @@ def build_registry(force: bool = False) -> ToolRegistry:
     from jarvis.mentor import register_mentor_tools
 
     register_mentor_tools(registry)
+    from jarvis.mentor_projects import register_project_tools
+
+    register_project_tools(registry)
     from jarvis.devops.evidence import register_evidence_tools
 
     register_evidence_tools(registry)
