@@ -11,7 +11,9 @@ from jarvis.personal import PersonalStore
 
 
 @pytest.fixture()
-def scheduler(tmp_path):
+def scheduler(tmp_path, monkeypatch):
+    # Pin registration before the fixed simulated execution time.
+    monkeypatch.setattr("jarvis.briefing_schedule._utcnow", lambda: at(0, 0))
     store = PersonalStore(tmp_path / "personal.db")
     return BriefingScheduler(store=store)
 
