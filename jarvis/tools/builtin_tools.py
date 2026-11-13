@@ -8,6 +8,7 @@ tool actually runs.
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from typing import Any
 
@@ -178,6 +179,7 @@ def build_registry(force: bool = False) -> ToolRegistry:
     _register_android_files(registry)
     _register_android_comms(registry)
     _register_android_system(registry)
+    _register_personal_assistant(registry)
 
     build_registry._instance = registry  # type: ignore[attr-defined]
     logger.info("Registered %d tools across %d categories", len(registry), len(registry.categories()))
@@ -1556,7 +1558,8 @@ def _register_android_files(r: ToolRegistry) -> None:
             ["local", "remote"],
         ),
         handler=lambda local, remote, device=None: get_android().push_file(local, remote, device),
-        risk=Risk.MEDIUM, category="android_files", requires_device=True,
+        risk=Risk.MEDIUM, category="android_files", requires_device=True, requires_confirmation=True,
+        allow_always=False, allow_auto_approve=False,
     ))
     r.register(Tool(
         name="android_pull_file",
@@ -1730,3 +1733,180 @@ def _register_android_system(r: ToolRegistry) -> None:
         handler=lambda target="", device=None: get_android().reboot(device, target),
         risk=Risk.HIGH, category="android_system", requires_device=True, requires_confirmation=True,
     ))
+
+
+# ------------------------------------------------- speech, memory, briefing
+def _register_personal_assistant(r: ToolRegistry) -> None:
+    """Shared speech engine, local document memory and the briefing scheduler."""
+
+    def _engine():
+        from jarvis.core.voice.speech import SpeechEngine
+
+        return SpeechEngine.from_env()
+
+    def _memory():
+        from jarvis.memory.doc_memory import DocMemory
+
+        return DocMemory()
+
+    def _scheduler():
+        from jarvis import ownership as ownership_module
+        from jarvis.briefing_schedule import BriefingScheduler
+
+        return BriefingScheduler(ownership=ownership_module.default_store())
+
+    def _guard(fn):
+        def run(**kw):
+            try:
+                return {"success": True, **fn(**kw)}
+            except ValueError as exc:
+                return {"success": False, "error": str(exc)}
+        return run
+
+    r.register(Tool(
+        name="speak_text",
+        description="Speak a short reply out loud through the active speech backend (local voice by "
+                    "default; ElevenLabs only if the user configured it). Use for short spoken answers.",
+        parameters=_obj({"text": _str("What to say, up to a few sentences.")}, ["text"]),
+        handler=_guard(lambda text: _speak(_engine(), text)),
+        risk=Risk.LOW, category="speech",
+    ))
+    r.register(Tool(
+        name="speech_status",
+        description="Which speech backends are configured and ready (never shows keys).",
+        parameters=_obj({}),
+        handler=lambda: {"success": True, "backends": _engine().status()},
+        risk=Risk.SAFE, category="speech",
+    ))
+    r.register(Tool(
+        name="memory_add_folder",
+        description="Opt a notes/docs folder into local memory so its contents can be searched later. "
+                    "Read-only: files are indexed, never changed. Secret-shaped files are skipped.",
+        parameters=_obj({"folder": _str("Full path of the folder to index, e.g. C:\\Users\\me\\notes.")}, ["folder"]),
+        handler=_guard(lambda folder: _memory().add_root(folder)),
+        risk=Risk.LOW, category="memory",
+    ))
+    r.register(Tool(
+        name="memory_search",
+        description="Search the user's indexed notes and docs. Every result includes its source file "
+                    "and line so answers can be cited.",
+        parameters=_obj({
+            "query": _str("What to look for in the indexed documents."),
+            "limit": _int("How many results.", 1, 25),
+        }, ["query"]),
+        handler=_guard(lambda query, limit=5: _memory().search(query, limit)),
+        risk=Risk.SAFE, category="memory",
+    ))
+    r.register(Tool(
+        name="memory_folders",
+        description="List folders currently opted into local memory.",
+        parameters=_obj({}),
+        handler=lambda: {"success": True, "folders": _memory().list_roots()},
+        risk=Risk.SAFE, category="memory",
+    ))
+    r.register(Tool(
+        name="memory_forget_folder",
+        description="Remove a folder from local memory. Only the index is deleted; the files stay.",
+        parameters=_obj({"folder": _str("The folder to stop indexing.")}, ["folder"]),
+        handler=_guard(lambda folder: _memory().remove_root(folder)),
+        risk=Risk.LOW, category="memory",
+    ))
+    r.register(Tool(
+        name="memory_reindex",
+        description="Re-scan indexed folders for new, changed or deleted notes.",
+        parameters=_obj({}),
+        handler=lambda: {"success": True, **_memory().reindex()},
+        risk=Risk.SAFE, category="memory",
+    ))
+    r.register(Tool(
+        name="schedule_daily_briefing",
+        description="Schedule the daily briefing at a local time (e.g. 07:30). Persistent, timezone-aware, "
+                    "survives restarts. Local data only - nothing is sent anywhere.",
+        parameters=_obj({
+            "time_of_day": _str("Local time, 24-hour HH:MM, e.g. 07:30."),
+            "timezone": _str("IANA timezone like Asia/Calcutta; empty means the system timezone."),
+            "name": _str("Schedule name, default 'daily'."),
+        }, ["time_of_day"]),
+        handler=_guard(lambda time_of_day, timezone="", name="daily":
+                       _scheduler().set_daily(name, time_of_day, timezone)),
+        risk=Risk.LOW, category="briefing",
+    ))
+    r.register(Tool(
+        name="briefing_schedule_status",
+        description="Show briefing schedules and when the next one runs.",
+        parameters=_obj({}),
+        handler=lambda: {"success": True, **_scheduler().status()},
+        risk=Risk.SAFE, category="briefing",
+    ))
+    r.register(Tool(
+        name="cancel_daily_briefing",
+        description="Cancel a scheduled daily briefing by name (history is kept).",
+        parameters=_obj({"name": _str("Schedule name, default 'daily'.")}),
+        handler=_guard(lambda name="daily": _scheduler().cancel(name)),
+        risk=Risk.LOW, category="briefing",
+    ))
+    r.register(Tool(
+        name="run_due_briefings",
+        description="Generate any scheduled briefings whose time has come (the scheduler loop calls this).",
+        parameters=_obj({}),
+        handler=lambda: {"success": True, "ran": _scheduler().run_due()},
+        risk=Risk.SAFE, category="briefing",
+    ))
+
+
+def _speak(engine: Any, text: str) -> dict[str, Any]:
+    """Tool handler for speak_text: synthesize, then play through the laptop."""
+    from jarvis.core.voice.speech import SpeechError
+
+    try:
+        result = engine.synthesize(text)
+    except SpeechError as exc:
+        return {"spoken": False, "error": str(exc)}
+    played = _play_audio(result.audio, result.format)
+    return {
+        "spoken": played,
+        "backend": result.backend,
+        "format": result.format,
+        "chars": result.chars,
+        "note": "" if played else "Synthesized but no player is available on this machine.",
+    }
+
+
+def _play_audio(audio: bytes, fmt: str) -> bool:
+    """Best-effort local playback. Returns False when no player exists."""
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    player = None
+    if sys.platform.startswith("win"):
+        # Windows: use PowerShell's SoundPlayer for wav.
+        if fmt == "wav":
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp.write(audio)
+                tmp_path = tmp.name
+            try:
+                subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     f"(New-Object Media.SoundPlayer '{tmp_path}').PlaySync()"],
+                    check=False, capture_output=True, timeout=60,
+                )
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+            return True
+        return False
+    for candidate in ("afplay", "paplay", "aplay"):
+        if shutil.which(candidate):
+            player = candidate
+            break
+    if player is None:
+        return False
+    with tempfile.NamedTemporaryFile(suffix=f".{fmt}", delete=False) as tmp:
+        tmp.write(audio)
+        tmp_path = tmp.name
+    try:
+        subprocess.run([player, tmp_path], check=False, capture_output=True, timeout=60)
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+    return True
