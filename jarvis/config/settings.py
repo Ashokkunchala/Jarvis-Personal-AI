@@ -51,8 +51,14 @@ class JarvisConfig:
     chunk_size: int = 480
 
     # TTS
-    tts_engine: str = "browser"  # browser, piper, gtts
+    tts_engine: str = "browser"  # browser, piper, gtts (legacy browser/web path)
     tts_voice: str = "en-US-AriaNeural"
+    # Shared speech backends (jarvis.core.voice.speech): local-first by default.
+    # JARVIS_TTS_BACKEND: "local" (default), "elevenlabs", or a comma list like
+    # "elevenlabs,local". ElevenLabs needs BOTH of these (two different values):
+    elevenlabs_api_key: str = os.getenv("ELEVENLABS_API_KEY", "")
+    elevenlabs_voice_id: str = os.getenv("ELEVENLABS_VOICE_ID", "")
+    elevenlabs_model: str = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
 
     # STT
     stt_engine: str = "gemini"  # gemini, whisper, vosk
