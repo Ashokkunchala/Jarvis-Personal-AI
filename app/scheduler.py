@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -31,6 +32,9 @@ class ScheduleRunner:
         self.registry: ToolRegistry | None = None
         self._loop_task: asyncio.Task | None = None
         self._active: dict[int, asyncio.Task] = {}
+        from jarvis.proactive import ProactiveRunner
+
+        self.proactive = ProactiveRunner()
 
     async def start(self) -> None:
         if self._loop_task is not None:
@@ -93,6 +97,11 @@ class ScheduleRunner:
     async def _run_loop(self) -> None:
         while True:
             await self.run_due_once()
+            try:
+                await asyncio.to_thread(self.proactive.tick)
+            except Exception:
+                # Never let a missing sensor or local DB issue stop other schedules.
+                logging.getLogger(__name__).warning("Proactive local check failed", exc_info=False)
             await asyncio.sleep(self.poll_seconds)
 
     async def _execute(self, schedule: dict[str, Any]) -> None:
