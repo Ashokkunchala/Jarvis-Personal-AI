@@ -195,6 +195,9 @@ def build_registry(force: bool = False) -> ToolRegistry:
     from jarvis.memory.controls import register_memory_controls
 
     register_memory_controls(registry)
+    from jarvis.backup import register_backup_tools
+
+    register_backup_tools(registry)
     from jarvis.wellness import register_wellness_tools
 
     register_wellness_tools(registry)
