@@ -275,3 +275,20 @@ certification exam. Free-text answers are not automatically graded: the tool
 returns reference concepts for honest discussion rather than inventing a score.
 Answers stay in the local mentor database; do not include credentials. No answer
 text or practice command is executed. No recording or microphone capture is added.
+
+## Operating modes in the shared brain and web chat
+
+The requested ten modes are available: Personal, Friend, Mentor, DevOps,
+Developer, Research, System admin, Security, Fitness and Emergency. Existing
+Assistant, Teacher, Storyteller and Health guide styles remain available too.
+The web Style selector exposes all fourteen choices. CLI/TUI mode-selection
+tools persist them through the existing mode store; the backend chat uses the
+same overlay definitions. Mode changes specialize the conversation workflow,
+not tool access, account permissions or autonomous execution rights.
+
+Emergency mode is calm triage and guidance, not an emergency dispatch service
+or automatic remediation. It does not activate a technical emergency stop by
+itself. Fitness remains general wellness, not diagnosis or treatment. New modes
+are not yet added to the native Android app's separate fixed selector; the
+responsive web interface exposes them on mobile browsers. No live audio or
+real-device testing is claimed by this change.
