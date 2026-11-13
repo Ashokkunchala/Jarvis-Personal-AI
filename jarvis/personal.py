@@ -8,7 +8,10 @@ tells it.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
+import re
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -145,13 +148,82 @@ class PersonalStore:
             row = db.execute("SELECT * FROM expenses WHERE id = ?", (cur.lastrowid,)).fetchone()
         return dict(row)
 
+    @staticmethod
+    def _expense_record(row) -> dict[str, Any]:
+        record = dict(row)
+        payload = json.dumps(record, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        return {**record, 'revision': hashlib.sha256(payload.encode()).hexdigest()}
+
+    def list_expenses(self, month: str | None = None, limit: int = 50) -> dict[str, Any]:
+        month = self._expense_month(month)
+        if type(limit) is not int or not 1 <= limit <= 200:
+            raise ValueError('limit must be an integer from 1 to 200.')
+        with self._connect() as db:
+            rows = db.execute('SELECT * FROM expenses WHERE substr(spent_on,1,7)=? ORDER BY spent_on DESC,id DESC LIMIT ?',
+                              (month, limit + 1)).fetchall()
+        return {'month': month, 'expenses': [self._expense_record(row) for row in rows[:limit]],
+                'truncated': len(rows) > limit,
+                'notice': 'Local manually entered bookkeeping only. Revision tokens detect a changed row, not identity or authorization. Amounts have no currency metadata; do not infer or combine currencies.'}
+
+    @staticmethod
+    def _expense_month(month: str | None = None) -> str:
+        value = date.today().strftime('%Y-%m') if month is None else month
+        if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}', value):
+            raise ValueError('Month must look like 2026-11.')
+        try:
+            date.fromisoformat(value + '-01')
+        except ValueError as exc:
+            raise ValueError('Choose a valid YYYY-MM month.') from exc
+        return value
+
+    def edit_expense(self, expense_id: int, expected_revision: str, amount: float | None = None,
+                     category: str | None = None, note: str | None = None,
+                     spent_on: str | None = None) -> dict[str, Any]:
+        if type(expense_id) is not int or expense_id < 1:
+            raise ValueError('Choose a positive expense ID from list_expenses.')
+        if not isinstance(expected_revision, str) or not re.fullmatch('[0-9a-f]{64}', expected_revision):
+            raise ValueError('Use the exact revision from list_expenses.')
+        if all(value is None for value in (amount, category, note, spent_on)):
+            raise ValueError('Supply at least one corrected expense field.')
+        values: dict[str, Any] = {}
+        if amount is not None:
+            if isinstance(amount, bool):
+                raise ValueError('Amount must be a finite number, not a boolean.')
+            try:
+                clean_amount = round(float(amount), 2)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError('Amount must be a finite number.') from exc
+            if not math.isfinite(clean_amount) or not 0 < clean_amount <= MAX_AMOUNT:
+                raise ValueError('Amount must be above zero and at most 100,000,000.')
+            values['amount'] = clean_amount
+        if category is not None:
+            values['category'] = _clean(category, 'Category').lower()
+        if note is not None:
+            values['note'] = _clean(note, 'Note', False)
+        if spent_on is not None:
+            if not isinstance(spent_on, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', spent_on):
+                raise ValueError('spent_on must be YYYY-MM-DD.')
+            values['spent_on'] = _parse_day(spent_on).isoformat()
+        with self._connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM expenses WHERE id=?', (expense_id,)).fetchone()
+            if row is None:
+                raise ValueError('Expense not found.')
+            current = self._expense_record(row)
+            if current['revision'] != expected_revision:
+                raise ValueError('Expense changed. List expenses again before editing; no change made.')
+            if all(current[key] == value for key, value in values.items()):
+                raise ValueError('The edit must change an expense field.')
+            updated = {**dict(row), **values}
+            db.execute('UPDATE expenses SET amount=?,category=?,note=?,spent_on=? WHERE id=?',
+                       (updated['amount'], updated['category'], updated['note'], updated['spent_on'], expense_id))
+            result = self._expense_record(db.execute('SELECT * FROM expenses WHERE id=?', (expense_id,)).fetchone())
+        return {'expense': result,
+                'notice': 'Corrected only this local bookkeeping row. Identity and creation time are preserved. No money moved, external account changed, currency conversion or deletion performed. Existing summaries now reflect the corrected entry.'}
+
     def expense_summary(self, month: str | None = None) -> dict[str, Any]:
         """Totals by category for a month given as YYYY-MM (default: this month)."""
-        month = (month or date.today().strftime("%Y-%m")).strip()
-        try:
-            datetime.strptime(month, "%Y-%m")
-        except ValueError as exc:
-            raise ValueError("Month must look like 2026-11.") from exc
+        month = self._expense_month(month)
         with self._connect() as db:
             rows = db.execute(
                 "SELECT category, ROUND(SUM(amount), 2) AS total, COUNT(*) AS n FROM expenses "
